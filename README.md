@@ -21,7 +21,7 @@ Inspired by [`perplexity-web-api-mcp`](https://github.com/Bahtya/perplexity-web-
 |------|-------------|-------|-----------|------------|
 | `search` | Quick web search (titles, URLs, snippets only) | turbo | ✅ ON | ❌ |
 | `ask` | AI question-answering with sources | claude-4.6-sonnet | ✅ ON | ❌ |
-| `reason` | Deep reasoning, interactive multi-turn | claude-4.8-opus-thinking | ❌ OFF | ✅ |
+| `reason` | Deep reasoning, interactive multi-turn | claude-4.6-sonnet-thinking | ❌ OFF | ✅ |
 
 - **ask** uses non-thinking models, incognito ON, single query
 - **reason** uses thinking models, incognito OFF, preserves conversation history for follow-ups
@@ -111,10 +111,10 @@ Single-turn AI answer with sources. Incognito ON, thread auto-deleted after.
 pplx-cli reason
 pplx-cli reason --query "compare tokio and async-std" --file Cargo.toml
 ```
-Enters an interactive multi-turn session. Type follow-up questions; the same thread (via `backend_uuid`) is reused. Type `/quit` or press `Ctrl-D` to exit (the thread is then deleted).
+Enters an interactive multi-turn session. Type follow-up questions; the same thread (via `backend_uuid`) is reused. A question may span multiple lines — press **Enter twice** (a blank line) to submit it. Type `/quit` or press `Ctrl-D` to exit (the thread is then deleted).
 
 ```
-🤔 Model: claude48opusthinking | /quit to exit
+🤔 Model: claude46sonnetthinking | blank line to send, /quit to exit
 > compare tokio and async-std
 [streaming answer...]
 

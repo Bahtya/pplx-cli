@@ -47,6 +47,6 @@ pub mod defaults {
     pub const SEARCH_MODE: &str = "concise";
     pub const ASK_MODEL: &str = "claude46sonnet";
     pub const ASK_MODE: &str = "concise";
-    pub const REASON_MODEL: &str = "claude48opusthinking";
+    pub const REASON_MODEL: &str = "claude46sonnetthinking";
     pub const REASON_MODE: &str = "copilot";
 }
