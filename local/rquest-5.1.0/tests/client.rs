@@ -1,0 +1,721 @@
+#![cfg(not(target_arch = "wasm32"))]
+mod support;
+
+use http_body_util::BodyExt;
+use support::server;
+
+use http::{
+    HeaderMap, Version,
+    header::{
+        AUTHORIZATION, CACHE_CONTROL, CONTENT_LENGTH, CONTENT_TYPE, REFERER, TRANSFER_ENCODING,
+    },
+};
+use rquest::Client;
+#[cfg(feature = "json")]
+use std::collections::HashMap;
+
+#[tokio::test]
+async fn auto_headers() {
+    let server = server::http(move |req| async move {
+        assert_eq!(req.method(), "GET");
+
+        assert_eq!(req.headers()["accept"], "*/*");
+        assert_eq!(req.headers().get("user-agent"), None);
+        if cfg!(feature = "gzip") {
+            assert!(
+                req.headers()["accept-encoding"]
+                    .to_str()
+                    .unwrap()
+                    .contains("gzip")
+            );
+        }
+        if cfg!(feature = "brotli") {
+            assert!(
+                req.headers()["accept-encoding"]
+                    .to_str()
+                    .unwrap()
+                    .contains("br")
+            );
+        }
+        if cfg!(feature = "zstd") {
+            assert!(
+                req.headers()["accept-encoding"]
+                    .to_str()
+                    .unwrap()
+                    .contains("zstd")
+            );
+        }
+        if cfg!(feature = "deflate") {
+            assert!(
+                req.headers()["accept-encoding"]
+                    .to_str()
+                    .unwrap()
+                    .contains("deflate")
+            );
+        }
+
+        http::Response::default()
+    });
+
+    let url = format!("http://{}/1", server.addr());
+    let res = rquest::Client::builder()
+        .no_proxy()
+        .build()
+        .unwrap()
+        .get(&url)
+        .header(rquest::header::ACCEPT, "*/*")
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(res.url().as_str(), &url);
+    assert_eq!(res.status(), rquest::StatusCode::OK);
+    assert_eq!(res.remote_addr(), Some(server.addr()));
+}
+
+#[tokio::test]
+async fn test_headers_order_with_client() {
+    use http::{HeaderName, HeaderValue};
+    use rquest::Client;
+    use rquest::header::{ACCEPT, CONTENT_TYPE, USER_AGENT};
+
+    let server = server::http(move |req| async move {
+        assert_eq!(req.method(), "POST");
+
+        let expected_headers = vec![
+            ("user-agent", "my-test-client"),
+            ("accept", "*/*"),
+            ("content-type", "application/json"),
+            ("authorization", "Bearer test-token"),
+            ("referer", "https://example.com"),
+            ("cookie", "cookie1=cookie1-value"),
+            ("cookie", "cookie2=cookie2-value"),
+            ("cache-control", "no-cache"),
+        ];
+
+        for (i, (expected_key, expected_value)) in expected_headers.iter().enumerate() {
+            let (key, value) = req.headers().iter().nth(i).unwrap();
+            assert_eq!(key.as_str(), *expected_key);
+            assert_eq!(value.as_bytes(), expected_value.as_bytes());
+        }
+
+        let full: Vec<u8> = req
+            .into_body()
+            .collect()
+            .await
+            .expect("must succeed")
+            .to_bytes()
+            .to_vec();
+
+        assert_eq!(full, br#"{"message":"hello"}"#);
+
+        http::Response::default()
+    });
+
+    let url = format!("http://{}/test", server.addr());
+
+    let client = Client::builder()
+        .no_proxy()
+        .default_headers({
+            let mut headers = HeaderMap::new();
+            headers.insert(ACCEPT, HeaderValue::from_static("*/*"));
+            headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+            headers.insert(USER_AGENT, HeaderValue::from_static("my-test-client"));
+            headers.insert(AUTHORIZATION, HeaderValue::from_static("Bearer test-token"));
+            headers.insert(REFERER, HeaderValue::from_static("https://example.com"));
+            headers.append("cookie", HeaderValue::from_static("cookie1=cookie1-value"));
+            headers.append("cookie", HeaderValue::from_static("cookie2=cookie2-value"));
+            headers.insert(CACHE_CONTROL, HeaderValue::from_static("no-cache"));
+            headers
+        })
+        .headers_order(vec![
+            HeaderName::from_static("user-agent"),
+            HeaderName::from_static("accept"),
+            HeaderName::from_static("content-type"),
+            HeaderName::from_static("authorization"),
+            HeaderName::from_static("referer"),
+            HeaderName::from_static("cookie"),
+            HeaderName::from_static("cache-control"),
+        ])
+        .build()
+        .unwrap();
+
+    let res = client
+        .post(&url)
+        .body(r#"{"message":"hello"}"#)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(res.status(), rquest::StatusCode::OK);
+}
+
+#[tokio::test]
+async fn test_headers_order_with_request() {
+    use http::{HeaderName, HeaderValue};
+    use rquest::Client;
+    use rquest::header::{ACCEPT, CONTENT_TYPE, USER_AGENT};
+
+    let server = server::http(move |req| async move {
+        assert_eq!(req.method(), "POST");
+
+        let expected_headers = vec![
+            ("user-agent", "my-test-client"),
+            ("accept", "*/*"),
+            ("content-type", "application/json"),
+            ("authorization", "Bearer test-token"),
+            ("referer", "https://example.com"),
+            ("cookie", "cookie1=cookie1"),
+            ("cookie", "cookie2=cookie2"),
+            ("cache-control", "no-cache"),
+        ];
+
+        for (i, (expected_key, expected_value)) in expected_headers.iter().enumerate() {
+            let (key, value) = req.headers().iter().nth(i).unwrap();
+            assert_eq!(key.as_str(), *expected_key);
+            assert_eq!(value.as_bytes(), expected_value.as_bytes());
+        }
+
+        let full: Vec<u8> = req
+            .into_body()
+            .collect()
+            .await
+            .expect("must succeed")
+            .to_bytes()
+            .to_vec();
+
+        assert_eq!(full, br#"{"message":"hello"}"#);
+
+        http::Response::default()
+    });
+
+    let url = format!("http://{}/test", server.addr());
+
+    let client = Client::builder().no_proxy().build().unwrap();
+
+    client
+        .update()
+        .headers_order(vec![
+            HeaderName::from_static("user-agent"),
+            HeaderName::from_static("accept"),
+            HeaderName::from_static("content-type"),
+            HeaderName::from_static("authorization"),
+            HeaderName::from_static("referer"),
+            HeaderName::from_static("cookie"),
+            HeaderName::from_static("cache-control"),
+        ])
+        .apply()
+        .unwrap();
+
+    let res = client
+        .post(&url)
+        .headers({
+            let mut headers = HeaderMap::new();
+            headers.insert(ACCEPT, HeaderValue::from_static("*/*"));
+            headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+            headers.insert(USER_AGENT, HeaderValue::from_static("my-test-client"));
+            headers.insert(AUTHORIZATION, HeaderValue::from_static("Bearer test-token"));
+            headers.insert(REFERER, HeaderValue::from_static("https://example.com"));
+            headers.append("cookie", HeaderValue::from_static("cookie1=cookie1"));
+            headers.append("cookie", HeaderValue::from_static("cookie2=cookie2"));
+            headers.insert(CACHE_CONTROL, HeaderValue::from_static("no-cache"));
+            headers
+        })
+        .body(r#"{"message":"hello"}"#)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(res.status(), rquest::StatusCode::OK);
+}
+
+#[tokio::test]
+async fn donot_set_content_length_0_if_have_no_body() {
+    let server = server::http(move |req| async move {
+        let headers = req.headers();
+        assert_eq!(headers.get(CONTENT_LENGTH), None);
+        assert!(headers.get(CONTENT_TYPE).is_none());
+        assert!(headers.get(TRANSFER_ENCODING).is_none());
+        dbg!(&headers);
+        http::Response::default()
+    });
+
+    let url = format!("http://{}/content-length", server.addr());
+    let res = rquest::Client::builder()
+        .no_proxy()
+        .build()
+        .expect("client builder")
+        .get(&url)
+        .send()
+        .await
+        .expect("request");
+
+    assert_eq!(res.status(), rquest::StatusCode::OK);
+}
+
+#[tokio::test]
+async fn user_agent() {
+    let server = server::http(move |req| async move {
+        assert_eq!(req.headers()["user-agent"], "rquest-test-agent");
+        http::Response::default()
+    });
+
+    let url = format!("http://{}/ua", server.addr());
+    let res = rquest::Client::builder()
+        .user_agent("rquest-test-agent")
+        .build()
+        .expect("client builder")
+        .get(&url)
+        .send()
+        .await
+        .expect("request");
+
+    assert_eq!(res.status(), rquest::StatusCode::OK);
+}
+
+#[tokio::test]
+async fn response_text() {
+    let _ = env_logger::try_init();
+
+    let server = server::http(move |_req| async { http::Response::new("Hello".into()) });
+
+    let client = Client::new();
+
+    let res = client
+        .get(format!("http://{}/text", server.addr()))
+        .send()
+        .await
+        .expect("Failed to get");
+    assert_eq!(res.content_length(), Some(5));
+    let text = res.text().await.expect("Failed to get text");
+    assert_eq!("Hello", text);
+}
+
+#[tokio::test]
+async fn response_bytes() {
+    let _ = env_logger::try_init();
+
+    let server = server::http(move |_req| async { http::Response::new("Hello".into()) });
+
+    let client = Client::new();
+
+    let res = client
+        .get(format!("http://{}/bytes", server.addr()))
+        .send()
+        .await
+        .expect("Failed to get");
+    assert_eq!(res.content_length(), Some(5));
+    let bytes = res.bytes().await.expect("res.bytes()");
+    assert_eq!("Hello", bytes);
+}
+
+#[tokio::test]
+#[cfg(feature = "json")]
+async fn response_json() {
+    let _ = env_logger::try_init();
+
+    let server = server::http(move |_req| async { http::Response::new("\"Hello\"".into()) });
+
+    let client = Client::new();
+
+    let res = client
+        .get(format!("http://{}/json", server.addr()))
+        .send()
+        .await
+        .expect("Failed to get");
+    let text = res.json::<String>().await.expect("Failed to get json");
+    assert_eq!("Hello", text);
+}
+
+#[tokio::test]
+async fn body_pipe_response() {
+    use http_body_util::BodyExt;
+    let _ = env_logger::try_init();
+
+    let server = server::http(move |req| async move {
+        if req.uri() == "/get" {
+            http::Response::new("pipe me".into())
+        } else {
+            assert_eq!(req.uri(), "/pipe");
+            assert_eq!(req.headers()["content-length"], "7");
+
+            let full: Vec<u8> = req
+                .into_body()
+                .collect()
+                .await
+                .expect("must succeed")
+                .to_bytes()
+                .to_vec();
+
+            assert_eq!(full, b"pipe me");
+
+            http::Response::default()
+        }
+    });
+
+    let client = Client::new();
+
+    let res1 = client
+        .get(format!("http://{}/get", server.addr()))
+        .send()
+        .await
+        .expect("get1");
+
+    assert_eq!(res1.status(), rquest::StatusCode::OK);
+    assert_eq!(res1.content_length(), Some(7));
+
+    // and now ensure we can "pipe" the response to another request
+    let res2 = client
+        .post(format!("http://{}/pipe", server.addr()))
+        .body(res1)
+        .send()
+        .await
+        .expect("res2");
+
+    assert_eq!(res2.status(), rquest::StatusCode::OK);
+}
+
+#[tokio::test]
+async fn overridden_dns_resolution_with_gai() {
+    let _ = env_logger::builder().is_test(true).try_init();
+    let server = server::http(move |_req| async { http::Response::new("Hello".into()) });
+
+    let overridden_domain = "rust-lang.org";
+    let url = format!(
+        "http://{overridden_domain}:{}/domain_override",
+        server.addr().port()
+    );
+    let client = rquest::Client::builder()
+        .no_proxy()
+        .resolve(overridden_domain, server.addr())
+        .build()
+        .expect("client builder");
+    let req = client.get(&url);
+    let res = req.send().await.expect("request");
+
+    assert_eq!(res.status(), rquest::StatusCode::OK);
+    let text = res.text().await.expect("Failed to get text");
+    assert_eq!("Hello", text);
+}
+
+#[tokio::test]
+async fn overridden_dns_resolution_with_gai_multiple() {
+    let _ = env_logger::builder().is_test(true).try_init();
+    let server = server::http(move |_req| async { http::Response::new("Hello".into()) });
+
+    let overridden_domain = "rust-lang.org";
+    let url = format!(
+        "http://{overridden_domain}:{}/domain_override",
+        server.addr().port()
+    );
+    // the server runs on IPv4 localhost, so provide both IPv4 and IPv6 and let the happy eyeballs
+    // algorithm decide which address to use.
+    let client = rquest::Client::builder()
+        .no_proxy()
+        .resolve_to_addrs(
+            overridden_domain,
+            &[
+                std::net::SocketAddr::new(
+                    std::net::IpAddr::V6(std::net::Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
+                    server.addr().port(),
+                ),
+                server.addr(),
+            ],
+        )
+        .build()
+        .expect("client builder");
+    let req = client.get(&url);
+    let res = req.send().await.expect("request");
+
+    assert_eq!(res.status(), rquest::StatusCode::OK);
+    let text = res.text().await.expect("Failed to get text");
+    assert_eq!("Hello", text);
+}
+
+#[cfg(feature = "hickory-dns")]
+#[tokio::test]
+async fn overridden_dns_resolution_with_hickory_dns() {
+    let _ = env_logger::builder().is_test(true).try_init();
+    let server = server::http(move |_req| async { http::Response::new("Hello".into()) });
+
+    let overridden_domain = "rust-lang.org";
+    let url = format!(
+        "http://{overridden_domain}:{}/domain_override",
+        server.addr().port()
+    );
+    let client = rquest::Client::builder()
+        .no_proxy()
+        .resolve(overridden_domain, server.addr())
+        .build()
+        .expect("client builder");
+    let req = client.get(&url);
+    let res = req.send().await.expect("request");
+
+    assert_eq!(res.status(), rquest::StatusCode::OK);
+    let text = res.text().await.expect("Failed to get text");
+    assert_eq!("Hello", text);
+}
+
+#[cfg(feature = "hickory-dns")]
+#[tokio::test]
+async fn overridden_dns_resolution_with_hickory_dns_multiple() {
+    let _ = env_logger::builder().is_test(true).try_init();
+    let server = server::http(move |_req| async { http::Response::new("Hello".into()) });
+
+    let overridden_domain = "rust-lang.org";
+    let url = format!(
+        "http://{overridden_domain}:{}/domain_override",
+        server.addr().port()
+    );
+    // the server runs on IPv4 localhost, so provide both IPv4 and IPv6 and let the happy eyeballs
+    // algorithm decide which address to use.
+    let client = rquest::Client::builder()
+        .no_proxy()
+        .resolve_to_addrs(
+            overridden_domain,
+            &[
+                std::net::SocketAddr::new(
+                    std::net::IpAddr::V6(std::net::Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
+                    server.addr().port(),
+                ),
+                server.addr(),
+            ],
+        )
+        .build()
+        .expect("client builder");
+    let req = client.get(&url);
+    let res = req.send().await.expect("request");
+
+    assert_eq!(res.status(), rquest::StatusCode::OK);
+    let text = res.text().await.expect("Failed to get text");
+    assert_eq!("Hello", text);
+}
+
+#[test]
+#[cfg(feature = "json")]
+fn add_json_default_content_type_if_not_set_manually() {
+    let mut map = HashMap::new();
+    map.insert("body", "json");
+    let content_type = http::HeaderValue::from_static("application/vnd.api+json");
+    let req = Client::new()
+        .post("https://google.com/")
+        .header(CONTENT_TYPE, &content_type)
+        .json(&map)
+        .build()
+        .expect("request is not valid");
+
+    assert_eq!(content_type, req.headers().get(CONTENT_TYPE).unwrap());
+}
+
+#[test]
+#[cfg(feature = "json")]
+fn update_json_content_type_if_set_manually() {
+    let mut map = HashMap::new();
+    map.insert("body", "json");
+    let req = Client::new()
+        .post("https://google.com/")
+        .json(&map)
+        .build()
+        .expect("request is not valid");
+
+    assert_eq!("application/json", req.headers().get(CONTENT_TYPE).unwrap());
+}
+
+#[tokio::test]
+async fn test_tls_info() {
+    let resp = rquest::Client::builder()
+        .tls_info(true)
+        .build()
+        .expect("client builder")
+        .get("https://google.com")
+        .send()
+        .await
+        .expect("response");
+    let tls_info = resp.extensions().get::<rquest::TlsInfo>();
+    assert!(tls_info.is_some());
+    let tls_info = tls_info.unwrap();
+    let peer_certificate = tls_info.peer_certificate();
+    assert!(peer_certificate.is_some());
+    let der = peer_certificate.unwrap();
+    assert_eq!(der[0], 0x30); // ASN.1 SEQUENCE
+
+    let resp = rquest::Client::builder()
+        .build()
+        .expect("client builder")
+        .get("https://google.com")
+        .send()
+        .await
+        .expect("response");
+    let tls_info = resp.extensions().get::<rquest::TlsInfo>();
+    assert!(tls_info.is_none());
+}
+
+// NOTE: using the default "current_thread" runtime here would cause the test to
+// fail, because the only thread would block until `panic_rx` receives a
+// notification while the client needs to be driven to get the graceful shutdown
+// done.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn highly_concurrent_requests_to_http2_server_with_low_max_concurrent_streams() {
+    let client = rquest::Client::builder().http2_only().build().unwrap();
+
+    let server = server::http_with_config(
+        move |req| async move {
+            assert_eq!(req.version(), http::Version::HTTP_2);
+            http::Response::default()
+        },
+        |builder| {
+            builder.http2().max_concurrent_streams(1);
+        },
+    );
+
+    let url = format!("http://{}", server.addr());
+
+    let futs = (0..100).map(|_| {
+        let client = client.clone();
+        let url = url.clone();
+        async move {
+            let res = client.get(&url).send().await.unwrap();
+            assert_eq!(res.status(), rquest::StatusCode::OK);
+        }
+    });
+    futures_util::future::join_all(futs).await;
+}
+
+#[tokio::test]
+async fn highly_concurrent_requests_to_slow_http2_server_with_low_max_concurrent_streams() {
+    use support::delay_server;
+
+    let client = rquest::Client::builder().http2_only().build().unwrap();
+
+    let server = delay_server::Server::new(
+        move |req| async move {
+            assert_eq!(req.version(), http::Version::HTTP_2);
+            http::Response::default()
+        },
+        |http| {
+            http.http2().max_concurrent_streams(1);
+        },
+        std::time::Duration::from_secs(2),
+    )
+    .await;
+
+    let url = format!("http://{}", server.addr());
+
+    let futs = (0..100).map(|_| {
+        let client = client.clone();
+        let url = url.clone();
+        async move {
+            let res = client.get(&url).send().await.unwrap();
+            assert_eq!(res.status(), rquest::StatusCode::OK);
+        }
+    });
+    futures_util::future::join_all(futs).await;
+
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn close_connection_after_idle_timeout() {
+    let mut server = server::http(move |_| async move { http::Response::default() });
+
+    let client = rquest::Client::builder()
+        .pool_idle_timeout(std::time::Duration::from_secs(1))
+        .build()
+        .unwrap();
+
+    let url = format!("http://{}", server.addr());
+
+    client.get(&url).send().await.unwrap();
+
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
+    assert!(
+        server
+            .events()
+            .iter()
+            .any(|e| matches!(e, server::Event::ConnectionClosed))
+    );
+}
+
+#[tokio::test]
+async fn default_http_version() {
+    let server = server::http(move |_| async move { http::Response::default() });
+
+    let resp = rquest::Client::builder()
+        .build()
+        .unwrap()
+        .get(format!("http://{}", server.addr()))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.version(), rquest::Version::HTTP_11);
+}
+
+#[tokio::test]
+async fn http1_version() {
+    let server = server::http(move |_| async move { http::Response::default() });
+
+    let resp = rquest::Client::builder()
+        .build()
+        .unwrap()
+        .get(format!("http://{}", server.addr()))
+        .version(Version::HTTP_11)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.version(), rquest::Version::HTTP_11);
+}
+
+#[tokio::test]
+async fn http2_version() {
+    let server = server::http(move |_| async move { http::Response::default() });
+
+    let resp = rquest::Client::builder()
+        .build()
+        .unwrap()
+        .get(format!("http://{}", server.addr()))
+        .version(Version::HTTP_2)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.version(), rquest::Version::HTTP_2);
+}
+
+#[tokio::test]
+async fn connection_pool_cache() {
+    let client = rquest::Client::default();
+    let url = "https://hyper.rs";
+
+    let resp = client
+        .get(url)
+        .version(http::Version::HTTP_2)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), rquest::StatusCode::OK);
+    assert_eq!(resp.version(), http::Version::HTTP_2);
+
+    let resp = client
+        .get(url)
+        .version(http::Version::HTTP_11)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), rquest::StatusCode::OK);
+    assert_eq!(resp.version(), http::Version::HTTP_11);
+
+    let resp = client
+        .get(url)
+        .version(http::Version::HTTP_2)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), rquest::StatusCode::OK);
+    assert_eq!(resp.version(), http::Version::HTTP_2);
+}

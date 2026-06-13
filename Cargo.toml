@@ -1,0 +1,27 @@
+[package]
+name = "pplx-cli"
+version = "0.1.0"
+edition = "2024"
+description = "CLI client for Perplexity AI web API with TLS fingerprint"
+
+[dependencies]
+rquest = { path = "local/rquest-5.1.0", default-features = false, features = [
+    "webpki-roots", "cookies", "json", "stream", "socks", "multipart",
+] }
+rquest-util = { path = "local/rquest-util-2.2.1", default-features = false, features = ["emulation"] }
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+clap = { version = "4", features = ["derive", "env"] }
+uuid = { version = "1", features = ["v4"] }
+base64 = "0.22"
+mime_guess = "2"
+futures-util = "0.3"
+memchr = "2"
+thiserror = "2"
+bytes = "1"
+pin-project-lite = "0.2"
+url = "2"
+
+[patch.crates-io]
+rquest = { path = "local/rquest-5.1.0" }
