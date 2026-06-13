@@ -1,6 +1,6 @@
 use crate::config::{
-    API_BASE_URL, API_VERSION, ENDPOINT_AUTH_CSRF, ENDPOINT_AUTH_SESSION,
-    ENDPOINT_DELETE_THREAD, ENDPOINT_SSE_ASK, SESSION_COOKIE,
+    API_BASE_URL, API_VERSION, ENDPOINT_AUTH_CSRF, ENDPOINT_AUTH_SESSION, ENDPOINT_DELETE_THREAD,
+    ENDPOINT_SSE_ASK, SESSION_COOKIE, TURBO_MODEL,
 };
 use crate::error::{Error, Result};
 use crate::sse::{SseEvent, SseStream, WebResult};
@@ -20,6 +20,10 @@ const STREAM_TIMEOUT: Duration = Duration::from_secs(360);
 
 const PERPLEXITY_ORIGIN: HeaderValue = HeaderValue::from_static(API_BASE_URL);
 const PERPLEXITY_REFERER: HeaderValue = HeaderValue::from_static("https://www.perplexity.ai/");
+
+/// Heads-up printed to stderr when the server silently routes a non-turbo
+/// request to the free `turbo` model. Shared by the `Answer` and `Done` arms.
+const TURBO_DOWNGRADE_HINT: &str = "\nℹ️  Server used turbo (normal for simple questions; if answers degrade, your token may be expiring)";
 
 /// Perplexity API client with TLS fingerprint emulation.
 pub struct Client {
@@ -179,7 +183,7 @@ impl Client {
                 message: e.to_string(),
             })?;
 
-        let requested_model = if model_preference != "turbo" {
+        let requested_model = if model_preference != TURBO_MODEL {
             Some(model_preference.to_string())
         } else {
             None
@@ -224,7 +228,13 @@ impl Client {
                 SseEvent::Delta { text } => {
                     answer.push_str(&text);
                 }
-                SseEvent::Answer { text, web_results: wr, backend_uuid: bu, read_write_token: rwt } => {
+                SseEvent::Answer {
+                    text,
+                    web_results: wr,
+                    backend_uuid: bu,
+                    read_write_token: rwt,
+                    downgraded,
+                } => {
                     answer = text;
                     if !wr.is_empty() {
                         web_results = wr;
@@ -235,6 +245,9 @@ impl Client {
                     if rwt.is_some() {
                         read_write_token = rwt;
                     }
+                    if downgraded {
+                        eprintln!("{TURBO_DOWNGRADE_HINT}");
+                    }
                 }
                 SseEvent::WebResults { items } => {
                     web_results = items;
@@ -242,6 +255,7 @@ impl Client {
                 SseEvent::Done {
                     backend_uuid: uuid,
                     read_write_token: rwt,
+                    downgraded,
                 } => {
                     if uuid.is_some() {
                         backend_uuid = uuid;
@@ -249,17 +263,11 @@ impl Client {
                     if rwt.is_some() {
                         read_write_token = rwt;
                     }
+                    if downgraded {
+                        eprintln!("{TURBO_DOWNGRADE_HINT}");
+                    }
                 }
                 SseEvent::SearchStatus { .. } | SseEvent::Metadata { .. } => {}
-                SseEvent::ModelDowngrade { backend_uuid: bu, read_write_token: rwt } => {
-                    if bu.is_some() {
-                        backend_uuid = bu;
-                    }
-                    if rwt.is_some() {
-                        read_write_token = rwt;
-                    }
-                    eprintln!("\nℹ️  Server used turbo (normal for simple questions; if answers degrade, your token may be expiring)");
-                }
                 SseEvent::Error { message } => {
                     return Err(Error::Server {
                         status: 0,
@@ -328,7 +336,13 @@ impl Client {
                         streamed = true;
                     }
                 }
-                SseEvent::Answer { text, web_results: wr, backend_uuid: bu, read_write_token: rwt } => {
+                SseEvent::Answer {
+                    text,
+                    web_results: wr,
+                    backend_uuid: bu,
+                    read_write_token: rwt,
+                    downgraded,
+                } => {
                     // Only print if we didn't already stream via deltas
                     if !streamed && !text.is_empty() {
                         if showed_progress {
@@ -353,6 +367,9 @@ impl Client {
                     if rwt.is_some() {
                         read_write_token = rwt;
                     }
+                    if downgraded {
+                        eprintln!("{TURBO_DOWNGRADE_HINT}");
+                    }
                 }
                 SseEvent::WebResults { items } => {
                     web_results = items;
@@ -360,12 +377,16 @@ impl Client {
                 SseEvent::Done {
                     backend_uuid: uuid,
                     read_write_token: rwt,
+                    downgraded,
                 } => {
                     if uuid.is_some() {
                         backend_uuid = uuid;
                     }
                     if rwt.is_some() {
                         read_write_token = rwt;
+                    }
+                    if downgraded {
+                        eprintln!("{TURBO_DOWNGRADE_HINT}");
                     }
                 }
                 SseEvent::SearchStatus { progress } => {
@@ -388,15 +409,6 @@ impl Client {
                             eprintln!("   • {q}");
                         }
                     }
-                }
-                SseEvent::ModelDowngrade { backend_uuid: bu, read_write_token: rwt } => {
-                    if bu.is_some() {
-                        backend_uuid = bu;
-                    }
-                    if rwt.is_some() {
-                        read_write_token = rwt;
-                    }
-                    eprintln!("\nℹ️  Server used turbo (normal for simple questions; if answers degrade, your token may be expiring)");
                 }
                 SseEvent::Error { message } => {
                     eprintln!("\n❌ {message}");
