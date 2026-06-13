@@ -124,6 +124,50 @@ fn read_line(prompt: &str) -> Option<String> {
     }
 }
 
+/// One turn read from stdin in `reason` mode.
+enum TurnInput {
+    Quit,
+    Query(String),
+}
+
+/// Read a (possibly multi-line) question for `reason`. Lines accumulate until a
+/// blank line (or EOF) submits them as one question. `/quit`/`/exit`/`/q` on any
+/// line quits; `/help` prints help and keeps reading.
+fn read_turn() -> TurnInput {
+    let mut buf = String::new();
+    loop {
+        let prompt = if buf.is_empty() { "> " } else { "… " };
+        let Some(line) = read_line(prompt) else {
+            // EOF: submit any pending text, else signal quit (avoids looping forever).
+            return if buf.trim().is_empty() {
+                TurnInput::Quit
+            } else {
+                TurnInput::Query(buf.trim().to_string())
+            };
+        };
+        match line.as_str() {
+            "/quit" | "/exit" | "/q" => return TurnInput::Quit,
+            "/help" => {
+                eprintln!("Commands: /quit, /exit, /help  (a blank line submits the question)");
+                continue;
+            }
+            "" => {
+                // Blank line submits when there is pending text; leading blanks are ignored.
+                if buf.trim().is_empty() {
+                    continue;
+                }
+                return TurnInput::Query(buf.trim().to_string());
+            }
+            _ => {
+                if !buf.is_empty() {
+                    buf.push('\n');
+                }
+                buf.push_str(&line);
+            }
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
@@ -253,7 +297,7 @@ async fn cmd_reason(
     let (model_pref, mode) = resolve_model(model, defaults::REASON_MODEL, defaults::REASON_MODE);
     let sources_ref: Vec<&str> = sources.iter().map(|s| s.as_str()).collect();
 
-    eprintln!("🤔 Model: {model_pref} | /quit to exit");
+    eprintln!("🤔 Model: {model_pref} | blank line to send, /quit to exit");
 
     let mut backend_uuid: Option<String> = None;
     let mut read_write_token: Option<String> = None;
@@ -280,20 +324,10 @@ async fn cmd_reason(
     }
 
     loop {
-        let input = match read_line("> ") {
-            Some(s) if s.is_empty() => continue,
-            Some(s) => s,
-            None => break,
+        let input = match read_turn() {
+            TurnInput::Quit => break,
+            TurnInput::Query(q) => q,
         };
-
-        match input.as_str() {
-            "/quit" | "/exit" | "/q" => break,
-            "/help" => {
-                eprintln!("Commands: /quit, /exit, /help");
-                continue;
-            }
-            _ => {}
-        }
 
         let file_refs: Vec<&std::path::Path> = Vec::new();
 
