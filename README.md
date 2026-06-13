@@ -20,7 +20,7 @@ Inspired by [`perplexity-web-api-mcp`](https://github.com/Bahtya/perplexity-web-
 | Mode | Description | Model | Incognito | Multi-turn |
 |------|-------------|-------|-----------|------------|
 | `search` | Quick web search (titles, URLs, snippets only) | turbo | ✅ ON | ❌ |
-| `ask` | AI question-answering with sources | claude-4.8-opus | ✅ ON | ❌ |
+| `ask` | AI question-answering with sources | claude-4.6-sonnet | ✅ ON | ❌ |
 | `reason` | Deep reasoning, interactive multi-turn | claude-4.8-opus-thinking | ❌ OFF | ✅ |
 
 - **ask** uses non-thinking models, incognito ON, single query
@@ -133,6 +133,8 @@ Use `--model <name>` with `ask` or `reason`:
 |------|----------|
 | `claude-4.8-opus` | ❌ |
 | `claude-4.8-opus-thinking` | ✅ |
+| `claude-4.6-sonnet` | ❌ |
+| `claude-4.6-sonnet-thinking` | ✅ |
 | `gpt-5.5` | ❌ |
 | `gpt-5.5-thinking` | ✅ |
 | `gemini-3.1-pro` | ❌ |

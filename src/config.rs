@@ -19,6 +19,8 @@ pub const SESSION_COOKIE: &str = "__Secure-next-auth.session-token";
 pub const MODELS: &[(&str, &str, &str)] = &[
     ("claude-4.8-opus", "claude48opus", "concise"),
     ("claude-4.8-opus-thinking", "claude48opusthinking", "copilot"),
+    ("claude-4.6-sonnet", "claude46sonnet", "concise"),
+    ("claude-4.6-sonnet-thinking", "claude46sonnetthinking", "copilot"),
     ("gpt-5.5", "gpt55", "concise"),
     ("gpt-5.5-thinking", "gpt55_thinking", "copilot"),
     ("gemini-3.1-pro", "gemini31pro_high", "copilot"),
@@ -39,7 +41,7 @@ pub fn find_model(name: &str) -> Option<(&'static str, &'static str)> {
 pub mod defaults {
     pub const SEARCH_MODEL: &str = "turbo";
     pub const SEARCH_MODE: &str = "concise";
-    pub const ASK_MODEL: &str = "claude48opus";
+    pub const ASK_MODEL: &str = "claude46sonnet";
     pub const ASK_MODE: &str = "concise";
     pub const REASON_MODEL: &str = "claude48opusthinking";
     pub const REASON_MODE: &str = "copilot";
