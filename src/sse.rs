@@ -43,8 +43,12 @@ pub enum SseEvent {
         related_queries: Vec<String>,
         display_model: Option<String>,
     },
-    /// Model was silently downgraded to turbo — token likely expired.
-    ModelDowngrade,
+    /// Model was silently downgraded to turbo. Still carries the thread
+    /// identifiers so cleanup works (the COMPLETED event's uuids are not lost).
+    ModelDowngrade {
+        backend_uuid: Option<String>,
+        read_write_token: Option<String>,
+    },
     /// Server error.
     Error { message: String },
 }
@@ -170,7 +174,7 @@ fn try_parse_events(
         let json_str = std::str::from_utf8(json_bytes).ok()?;
 
         let event = parse_message_event(json_str, requested_model, *downgrade_detected);
-        if matches!(event, SseEvent::ModelDowngrade) {
+        if matches!(event, SseEvent::ModelDowngrade { .. }) {
             *downgrade_detected = true;
         }
         if matches!(event, SseEvent::Done { .. }) {
@@ -219,13 +223,25 @@ fn parse_message_event(
         };
     }
 
-    // Model downgrade detection — only on COMPLETED events
+    // Model downgrade detection — only on COMPLETED events. Still capture the
+    // thread identifiers so cleanup works even when the server routes to turbo.
     if status_str == "COMPLETED" && !downgrade_detected {
         if let Some(display_model) = outer.get("display_model").and_then(|v| v.as_str()) {
             if display_model == "turbo" {
                 if let Some(requested) = requested_model {
                     if requested != "turbo" {
-                        return SseEvent::ModelDowngrade;
+                        let backend_uuid = outer
+                            .get("backend_uuid")
+                            .and_then(|v| v.as_str())
+                            .map(String::from);
+                        let read_write_token = outer
+                            .get("read_write_token")
+                            .and_then(|v| v.as_str())
+                            .map(String::from);
+                        return SseEvent::ModelDowngrade {
+                            backend_uuid,
+                            read_write_token,
+                        };
                     }
                 }
             }

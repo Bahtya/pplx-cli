@@ -251,7 +251,13 @@ impl Client {
                     }
                 }
                 SseEvent::SearchStatus { .. } | SseEvent::Metadata { .. } => {}
-                SseEvent::ModelDowngrade => {
+                SseEvent::ModelDowngrade { backend_uuid: bu, read_write_token: rwt } => {
+                    if bu.is_some() {
+                        backend_uuid = bu;
+                    }
+                    if rwt.is_some() {
+                        read_write_token = rwt;
+                    }
                     eprintln!("\nℹ️  Server used turbo (normal for simple questions; if answers degrade, your token may be expiring)");
                 }
                 SseEvent::Error { message } => {
@@ -383,7 +389,13 @@ impl Client {
                         }
                     }
                 }
-                SseEvent::ModelDowngrade => {
+                SseEvent::ModelDowngrade { backend_uuid: bu, read_write_token: rwt } => {
+                    if bu.is_some() {
+                        backend_uuid = bu;
+                    }
+                    if rwt.is_some() {
+                        read_write_token = rwt;
+                    }
                     eprintln!("\nℹ️  Server used turbo (normal for simple questions; if answers degrade, your token may be expiring)");
                 }
                 SseEvent::Error { message } => {
