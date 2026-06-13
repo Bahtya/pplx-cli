@@ -36,6 +36,11 @@ pub enum SseEvent {
     Done {
         backend_uuid: Option<String>,
         read_write_token: Option<String>,
+        /// True when a non-turbo request was silently routed to turbo (same
+        /// meaning as [`SseEvent::Answer::downgraded`]). Carried on this path
+        /// (no-answer COMPLETED) so the warning still fires and the
+        /// once-per-stream latch still engages.
+        downgraded: bool,
     },
     /// Web results returned during search phase.
     WebResults { items: Vec<WebResult> },
@@ -154,6 +159,7 @@ fn try_parse_events(
             return Some(SseEvent::Done {
                 backend_uuid: None,
                 read_write_token: None,
+                downgraded: false,
             });
         }
         return None;
@@ -172,7 +178,10 @@ fn try_parse_events(
         let json_str = std::str::from_utf8(json_bytes).ok()?;
 
         let event = parse_message_event(json_str, requested_model, *downgrade_detected);
-        if matches!(event, SseEvent::Answer { downgraded: true, .. }) {
+        if matches!(
+            event,
+            SseEvent::Answer { downgraded: true, .. } | SseEvent::Done { downgraded: true, .. }
+        ) {
             *downgrade_detected = true;
         }
         if matches!(event, SseEvent::Done { .. }) {
@@ -266,8 +275,8 @@ fn parse_message_event(
         // response text, sources, and thread uuids are preserved; `downgraded`
         // lets the client print a heads-up. Only flagged once per stream.
         let downgraded = !downgrade_detected
-            && outer.get("display_model").and_then(|v| v.as_str()) == Some("turbo")
-            && matches!(requested_model.as_deref(), Some(r) if r != "turbo");
+            && outer.get("display_model").and_then(|v| v.as_str()) == Some(crate::config::TURBO_MODEL)
+            && requested_model.as_deref().is_some_and(|r| r != crate::config::TURBO_MODEL);
 
         // Try to extract answer from text/FINAL step
         if let Some(answer_text) = extract_final_answer(&outer) {
@@ -296,6 +305,7 @@ fn parse_message_event(
         SseEvent::Done {
             backend_uuid,
             read_write_token,
+            downgraded,
         }
     } else {
         // Unknown status — try to extract text
@@ -394,7 +404,7 @@ fn extract_web_results(outer: &serde_json::Map<String, serde_json::Value>) -> Ve
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_message_event, SseEvent};
+    use super::{parse_message_event, try_parse_events, SseEvent};
 
     /// Build a COMPLETED event whose FINAL step carries an answer + one web
     /// result, served by `display_model`. Used to exercise the downgrade path.
@@ -436,6 +446,8 @@ mod tests {
     #[test]
     fn no_downgrade_when_turbo_was_requested() {
         // search mode requests turbo -> a turbo response is not a downgrade.
+        // (requested=None models client.rs mapping a turbo request to
+        // requested_model=None; Some("turbo") is treated identically by the guard.)
         match completed("turbo", None, false) {
             SseEvent::Answer { downgraded, .. } => assert!(!downgraded),
             other => panic!("expected Answer, got {other:?}"),
@@ -472,9 +484,150 @@ mod tests {
         });
         let req = Some("claude46sonnet".to_string());
         match parse_message_event(&outer.to_string(), &req, false) {
-            SseEvent::Answer { text, web_results, downgraded, .. } => {
+            SseEvent::Answer {
+                text, web_results, backend_uuid, read_write_token, downgraded,
+            } => {
                 assert!(downgraded);
                 assert_eq!(text, "fallback answer");
+                assert!(web_results.is_empty());
+                assert_eq!(backend_uuid.as_deref(), Some("b2"));
+                assert_eq!(read_write_token.as_deref(), Some("r2"));
+            }
+            other => panic!("expected Answer, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn done_path_flags_downgrade_with_no_answer() {
+        // COMPLETED with no FINAL step and no top-level `answer` takes the Done
+        // path. A turbo downgrade here must still be flagged (regression: the
+        // old folded-into-Answer code dropped it on this path).
+        let outer = serde_json::json!({
+            "status": "COMPLETED",
+            "display_model": "turbo",
+            "backend_uuid": "b-done",
+            "read_write_token": "r-done"
+        });
+        let req = Some("claude46sonnet".to_string());
+        match parse_message_event(&outer.to_string(), &req, false) {
+            SseEvent::Done { backend_uuid, read_write_token, downgraded } => {
+                assert!(downgraded, "no-answer turbo COMPLETED must still flag downgrade");
+                assert_eq!(backend_uuid.as_deref(), Some("b-done"));
+                assert_eq!(read_write_token.as_deref(), Some("r-done"));
+            }
+            other => panic!("expected Done, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn latch_flags_downgrade_only_once_across_events() {
+        // Drive the real latch in try_parse_events (not just parse_message_event)
+        // over a buffer with two turbo COMPLETED message frames.
+        use bytes::BytesMut;
+        fn frame(json: &str) -> Vec<u8> {
+            format!("event: message\r\ndata: {json}\r\n\r\n").into_bytes()
+        }
+        let mk = |answer: &str, bu: &str| {
+            frame(
+                &serde_json::json!({
+                    "status": "COMPLETED",
+                    "display_model": "turbo",
+                    "backend_uuid": bu,
+                    "read_write_token": "r",
+                    "answer": answer
+                })
+                .to_string(),
+            )
+        };
+
+        let mut buf = BytesMut::new();
+        buf.extend_from_slice(&mk("a1", "b1"));
+        buf.extend_from_slice(&mk("a2", "b2"));
+
+        let mut finished = false;
+        let mut done_sent = false;
+        let req = Some("claude46sonnet".to_string());
+        let mut dd = false;
+
+        let e1 = try_parse_events(&mut buf, &mut finished, &mut done_sent, &req, &mut dd);
+        assert!(
+            matches!(e1, Some(SseEvent::Answer { downgraded: true, .. })),
+            "first event flagged"
+        );
+        assert!(dd, "latch engaged after first downgrade");
+
+        let e2 = try_parse_events(&mut buf, &mut finished, &mut done_sent, &req, &mut dd);
+        assert!(
+            matches!(e2, Some(SseEvent::Answer { downgraded: false, .. })),
+            "second event not re-flagged"
+        );
+    }
+
+    #[test]
+    fn downgrade_with_absent_uuids() {
+        // uuids may be absent; the downgrade must still flag without panicking.
+        let outer = serde_json::json!({
+            "status": "COMPLETED",
+            "display_model": "turbo",
+            "answer": "no ids here"
+        });
+        let req = Some("claude46sonnet".to_string());
+        match parse_message_event(&outer.to_string(), &req, false) {
+            SseEvent::Answer { text, backend_uuid, read_write_token, downgraded, .. } => {
+                assert!(downgraded);
+                assert_eq!(text, "no ids here");
+                assert!(backend_uuid.is_none());
+                assert!(read_write_token.is_none());
+            }
+            other => panic!("expected Answer, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn web_results_multiple_entries_and_missing_snippet() {
+        // Two results, the first missing `snippet` (covered by #[serde(default)]).
+        let payload = serde_json::json!({
+            "answer": "a",
+            "web_results": [
+                {"name": "A", "url": "https://a"},
+                {"name": "B", "url": "https://b", "snippet": "sb"}
+            ]
+        });
+        let outer = serde_json::json!({
+            "status": "COMPLETED",
+            "display_model": "claude-4.6-sonnet",
+            "backend_uuid": "b",
+            "read_write_token": "r",
+            "text": [{"step_type": "FINAL", "content": {"answer": payload.to_string()}}]
+        });
+        let req = Some("claude46sonnet".to_string());
+        match parse_message_event(&outer.to_string(), &req, false) {
+            SseEvent::Answer { web_results, .. } => {
+                assert_eq!(web_results.len(), 2);
+                assert_eq!(web_results[0].name, "A");
+                assert_eq!(web_results[0].snippet, "", "missing snippet defaults to empty");
+                assert_eq!(web_results[1].snippet, "sb");
+            }
+            other => panic!("expected Answer, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn empty_web_results_array_still_yields_answer() {
+        // A FINAL step with an empty web_results array must produce an Answer
+        // (empty Vec), not fall through to Done.
+        let payload = serde_json::json!({"answer": "a", "web_results": []});
+        let outer = serde_json::json!({
+            "status": "COMPLETED",
+            "display_model": "claude-4.6-sonnet",
+            "backend_uuid": "b",
+            "read_write_token": "r",
+            "text": [{"step_type": "FINAL", "content": {"answer": payload.to_string()}}]
+        });
+        let req = Some("claude46sonnet".to_string());
+        match parse_message_event(&outer.to_string(), &req, false) {
+            SseEvent::Answer { text, web_results, .. } => {
+                assert_eq!(text, "a");
                 assert!(web_results.is_empty());
             }
             other => panic!("expected Answer, got {other:?}"),

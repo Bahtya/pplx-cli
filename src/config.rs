@@ -15,6 +15,10 @@ pub const API_MODE_COPILOT: &str = "copilot";
 /// Session cookie name used by Perplexity.
 pub const SESSION_COOKIE: &str = "__Secure-next-auth.session-token";
 
+/// The free-tier model identifier: the `search` default and the silent-downgrade
+/// target detected on COMPLETED events (`display_model == "turbo"`).
+pub const TURBO_MODEL: &str = "turbo";
+
 /// Hardcoded model table: (display_name, model_preference, search_mode)
 pub const MODELS: &[(&str, &str, &str)] = &[
     ("claude-4.8-opus", "claude48opus", "concise"),
@@ -39,7 +43,7 @@ pub fn find_model(name: &str) -> Option<(&'static str, &'static str)> {
 
 /// Default model preference for each CLI mode.
 pub mod defaults {
-    pub const SEARCH_MODEL: &str = "turbo";
+    pub const SEARCH_MODEL: &str = super::TURBO_MODEL;
     pub const SEARCH_MODE: &str = "concise";
     pub const ASK_MODEL: &str = "claude46sonnet";
     pub const ASK_MODE: &str = "concise";
