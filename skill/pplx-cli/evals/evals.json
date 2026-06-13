@@ -1,0 +1,26 @@
+{
+  "skill_name": "pplx-cli",
+  "evals": [
+    {
+      "id": 0,
+      "name": "web-search",
+      "prompt": "用 pplx-cli 搜一下 Rust 里 tokio 和 async-std 的最新对比，给我几个靠谱的来源链接",
+      "expected_output": "Runs `pplx-cli search ...`, returns real source URLs/snippets; picks the relevant ones; doesn't fabricate links.",
+      "files": []
+    },
+    {
+      "id": 1,
+      "name": "ask-and-verify",
+      "prompt": "用 pplx-cli 问一下 tokio::select! 怎么用，然后确认它说的对不对",
+      "expected_output": "Runs `pplx-cli ask ...`, then independently verifies the key claim (runs a small example or checks official docs), and clearly separates 'pplx said' from 'verified'.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "name": "multi-turn-research",
+      "prompt": "用 pplx-cli 多轮探讨一下 TLS 指纹方案该怎么选，由浅入深",
+      "expected_output": "Does SEQUENTIAL pplx-cli calls (one question per turn), reflects between turns in the reply, goes shallow->deep over 3+ turns, and verifies key conclusions. Critically: does NOT pipe all questions into one call.",
+      "files": []
+    }
+  ]
+}
