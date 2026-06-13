@@ -168,6 +168,10 @@ impl Client {
         let request_fut = self
             .http
             .post(format!("{API_BASE_URL}{ENDPOINT_SSE_ASK}"))
+            // Thinking models stay silent for tens of seconds before streaming;
+            // give this streaming request a long total timeout so the body
+            // isn't cut short by the client's 30s default.
+            .timeout(STREAM_TIMEOUT)
             .header(ORIGIN, PERPLEXITY_ORIGIN)
             .header(REFERER, PERPLEXITY_REFERER)
             .json(&payload)
