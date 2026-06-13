@@ -27,6 +27,10 @@ pub enum SseEvent {
         web_results: Vec<WebResult>,
         backend_uuid: Option<String>,
         read_write_token: Option<String>,
+        /// True when the server silently routed a non-turbo request to the free
+        /// `turbo` model. The full answer/sources/uuids are still carried so the
+        /// client can render the response, clean up the thread, and warn the user.
+        downgraded: bool,
     },
     /// Stream completed. Carries identifiers for follow-up and thread cleanup.
     Done {
@@ -42,12 +46,6 @@ pub enum SseEvent {
         thread_title: Option<String>,
         related_queries: Vec<String>,
         display_model: Option<String>,
-    },
-    /// Model was silently downgraded to turbo. Still carries the thread
-    /// identifiers so cleanup works (the COMPLETED event's uuids are not lost).
-    ModelDowngrade {
-        backend_uuid: Option<String>,
-        read_write_token: Option<String>,
     },
     /// Server error.
     Error { message: String },
@@ -174,7 +172,7 @@ fn try_parse_events(
         let json_str = std::str::from_utf8(json_bytes).ok()?;
 
         let event = parse_message_event(json_str, requested_model, *downgrade_detected);
-        if matches!(event, SseEvent::ModelDowngrade { .. }) {
+        if matches!(event, SseEvent::Answer { downgraded: true, .. }) {
             *downgrade_detected = true;
         }
         if matches!(event, SseEvent::Done { .. }) {
@@ -223,31 +221,6 @@ fn parse_message_event(
         };
     }
 
-    // Model downgrade detection — only on COMPLETED events. Still capture the
-    // thread identifiers so cleanup works even when the server routes to turbo.
-    if status_str == "COMPLETED" && !downgrade_detected {
-        if let Some(display_model) = outer.get("display_model").and_then(|v| v.as_str()) {
-            if display_model == "turbo" {
-                if let Some(requested) = requested_model {
-                    if requested != "turbo" {
-                        let backend_uuid = outer
-                            .get("backend_uuid")
-                            .and_then(|v| v.as_str())
-                            .map(String::from);
-                        let read_write_token = outer
-                            .get("read_write_token")
-                            .and_then(|v| v.as_str())
-                            .map(String::from);
-                        return SseEvent::ModelDowngrade {
-                            backend_uuid,
-                            read_write_token,
-                        };
-                    }
-                }
-            }
-        }
-    }
-
     // Extract blocks for streaming text (PENDING events with markdown_block)
     if status_str == "PENDING" || status_str.is_empty() {
         if let Some(blocks) = outer.get("blocks").and_then(|v| v.as_array()) {
@@ -288,6 +261,14 @@ fn parse_message_event(
             .and_then(|v| v.as_str())
             .map(String::from);
 
+        // Detect a silent downgrade to the free `turbo` model (the server routed
+        // a non-turbo request to turbo). We still emit the full Answer so the
+        // response text, sources, and thread uuids are preserved; `downgraded`
+        // lets the client print a heads-up. Only flagged once per stream.
+        let downgraded = !downgrade_detected
+            && outer.get("display_model").and_then(|v| v.as_str()) == Some("turbo")
+            && matches!(requested_model.as_deref(), Some(r) if r != "turbo");
+
         // Try to extract answer from text/FINAL step
         if let Some(answer_text) = extract_final_answer(&outer) {
             let web_results = extract_web_results(&outer);
@@ -296,6 +277,7 @@ fn parse_message_event(
                 web_results,
                 backend_uuid,
                 read_write_token,
+                downgraded,
             };
         }
 
@@ -306,6 +288,7 @@ fn parse_message_event(
                 web_results: Vec::new(),
                 backend_uuid,
                 read_write_token,
+                downgraded,
             };
         }
 
@@ -407,4 +390,94 @@ fn extract_web_results(outer: &serde_json::Map<String, serde_json::Value>) -> Ve
         }
     }
     Vec::new()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_message_event, SseEvent};
+
+    /// Build a COMPLETED event whose FINAL step carries an answer + one web
+    /// result, served by `display_model`. Used to exercise the downgrade path.
+    fn completed(display_model: &str, requested: Option<&str>, already_detected: bool) -> SseEvent {
+        let payload = serde_json::json!({
+            "answer": "42",
+            "web_results": [{"name": "Source", "url": "https://example.com", "snippet": "snip"}]
+        });
+        let outer = serde_json::json!({
+            "status": "COMPLETED",
+            "display_model": display_model,
+            "backend_uuid": "backend-1",
+            "read_write_token": "rwt-1",
+            "text": [{"step_type": "FINAL", "content": {"answer": payload.to_string()}}]
+        });
+        let requested = requested.map(String::from);
+        parse_message_event(&outer.to_string(), &requested, already_detected)
+    }
+
+    #[test]
+    fn turbo_downgrade_carries_answer_sources_and_uuids() {
+        // Regression: the downgrade path used to discard these.
+        match completed("turbo", Some("claude46sonnet"), false) {
+            SseEvent::Answer {
+                text, web_results, backend_uuid, read_write_token, downgraded,
+            } => {
+                assert!(downgraded, "should be flagged as a turbo downgrade");
+                assert_eq!(text, "42");
+                assert_eq!(backend_uuid.as_deref(), Some("backend-1"));
+                assert_eq!(read_write_token.as_deref(), Some("rwt-1"));
+                assert_eq!(web_results.len(), 1, "sources must survive the downgrade");
+                assert_eq!(web_results[0].name, "Source");
+                assert_eq!(web_results[0].url, "https://example.com");
+            }
+            other => panic!("expected Answer, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn no_downgrade_when_turbo_was_requested() {
+        // search mode requests turbo -> a turbo response is not a downgrade.
+        match completed("turbo", None, false) {
+            SseEvent::Answer { downgraded, .. } => assert!(!downgraded),
+            other => panic!("expected Answer, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn downgrade_flagged_only_once_per_stream() {
+        match completed("turbo", Some("claude46sonnet"), true) {
+            SseEvent::Answer { downgraded, .. } => assert!(!downgraded),
+            other => panic!("expected Answer, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn honored_model_is_not_a_downgrade() {
+        match completed("claude-4.6-sonnet", Some("claude46sonnet"), false) {
+            SseEvent::Answer { text, downgraded, .. } => {
+                assert!(!downgraded);
+                assert_eq!(text, "42");
+            }
+            other => panic!("expected Answer, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn top_level_answer_fallback_flags_downgrade() {
+        let outer = serde_json::json!({
+            "status": "COMPLETED",
+            "display_model": "turbo",
+            "backend_uuid": "b2",
+            "read_write_token": "r2",
+            "answer": "fallback answer"
+        });
+        let req = Some("claude46sonnet".to_string());
+        match parse_message_event(&outer.to_string(), &req, false) {
+            SseEvent::Answer { text, web_results, downgraded, .. } => {
+                assert!(downgraded);
+                assert_eq!(text, "fallback answer");
+                assert!(web_results.is_empty());
+            }
+            other => panic!("expected Answer, got {other:?}"),
+        }
+    }
 }
