@@ -252,7 +252,7 @@ impl Client {
                 }
                 SseEvent::SearchStatus { .. } | SseEvent::Metadata { .. } => {}
                 SseEvent::ModelDowngrade => {
-                    eprintln!("\n⚠️  Model downgrade detected — session token may have expired");
+                    eprintln!("\nℹ️  Server used turbo (normal for simple questions; if answers degrade, your token may be expiring)");
                 }
                 SseEvent::Error { message } => {
                     return Err(Error::Server {
@@ -384,7 +384,7 @@ impl Client {
                     }
                 }
                 SseEvent::ModelDowngrade => {
-                    eprintln!("\n⚠️  Model downgrade detected — session token may have expired");
+                    eprintln!("\nℹ️  Server used turbo (normal for simple questions; if answers degrade, your token may be expiring)");
                 }
                 SseEvent::Error { message } => {
                     eprintln!("\n❌ {message}");

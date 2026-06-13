@@ -144,7 +144,7 @@ Use `--model <name>` with `ask` or `reason`:
 
 - **TLS fingerprint**: `rquest` with `Emulation::Chrome136` mimics a real Chrome browser's TLS handshake, which Perplexity requires.
 - **CSRF**: Fetched automatically from `GET /api/auth/csrf` at startup (also validates the session).
-- **SSE streaming**: Responses stream from `/rest/sse/perplexity_ask` via Server-Sent Events; the parser handles `delta`, `answer`, `done`, `web_results`, `metadata`, and detects silent **model downgrade** (a sign the token expired).
+- **SSE streaming**: Responses stream from `/rest/sse/perplexity_ask` via Server-Sent Events; the parser handles `delta`, `answer`, `done`, `web_results`, `metadata`, and detects when the server silently routes to **turbo** (normal for trivial questions; a sign the token may be expiring if answers degrade).
 - **Multi-turn**: The `backend_uuid` + `read_write_token` from each response are carried into the next request's `last_backend_uuid` field.
 - **Thread cleanup**: On exit, calls `DELETE /rest/thread/delete_thread_by_entry_uuid` so no history is left behind.
 
