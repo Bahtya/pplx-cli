@@ -25,6 +25,8 @@ pub enum SseEvent {
     Answer {
         text: String,
         web_results: Vec<WebResult>,
+        backend_uuid: Option<String>,
+        read_write_token: Option<String>,
     },
     /// Stream completed. Carries identifiers for follow-up and thread cleanup.
     Done {
@@ -276,6 +278,8 @@ fn parse_message_event(
             return SseEvent::Answer {
                 text: answer_text,
                 web_results,
+                backend_uuid,
+                read_write_token,
             };
         }
 
@@ -284,6 +288,8 @@ fn parse_message_event(
             return SseEvent::Answer {
                 text: answer.into(),
                 web_results: Vec::new(),
+                backend_uuid,
+                read_write_token,
             };
         }
 

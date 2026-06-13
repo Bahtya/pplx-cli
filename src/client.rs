@@ -224,10 +224,16 @@ impl Client {
                 SseEvent::Delta { text } => {
                     answer.push_str(&text);
                 }
-                SseEvent::Answer { text, web_results: wr } => {
+                SseEvent::Answer { text, web_results: wr, backend_uuid: bu, read_write_token: rwt } => {
                     answer = text;
                     if !wr.is_empty() {
                         web_results = wr;
+                    }
+                    if bu.is_some() {
+                        backend_uuid = bu;
+                    }
+                    if rwt.is_some() {
+                        read_write_token = rwt;
                     }
                 }
                 SseEvent::WebResults { items } => {
@@ -237,8 +243,12 @@ impl Client {
                     backend_uuid: uuid,
                     read_write_token: rwt,
                 } => {
-                    backend_uuid = uuid;
-                    read_write_token = rwt;
+                    if uuid.is_some() {
+                        backend_uuid = uuid;
+                    }
+                    if rwt.is_some() {
+                        read_write_token = rwt;
+                    }
                 }
                 SseEvent::SearchStatus { .. } | SseEvent::Metadata { .. } => {}
                 SseEvent::ModelDowngrade => {
@@ -290,19 +300,52 @@ impl Client {
         let mut web_results = Vec::new();
         let mut backend_uuid = None;
         let mut read_write_token = None;
+        let mut streamed = false; // whether any delta text was printed
+        let mut showed_progress = false;
+        let stderr_tty = std::io::IsTerminal::is_terminal(&std::io::stderr());
 
         let mut stream = Box::pin(stream);
         while let Some(event) = stream.next().await {
             match event? {
                 SseEvent::Delta { text } => {
-                    print!("{text}");
-                    answer.push_str(&text);
+                    if !text.is_empty() {
+                        if showed_progress {
+                            if stderr_tty {
+                                eprint!("\r\u{1b}[K"); // clear progress line
+                            } else {
+                                eprintln!();
+                            }
+                            showed_progress = false;
+                        }
+                        print!("{text}");
+                        answer.push_str(&text);
+                        streamed = true;
+                    }
                 }
-                SseEvent::Answer { text, web_results: wr } => {
-                    print!("{text}");
-                    answer = text;
+                SseEvent::Answer { text, web_results: wr, backend_uuid: bu, read_write_token: rwt } => {
+                    // Only print if we didn't already stream via deltas
+                    if !streamed && !text.is_empty() {
+                        if showed_progress {
+                            if stderr_tty {
+                                eprint!("\r\u{1b}[K");
+                            } else {
+                                eprintln!();
+                            }
+                            showed_progress = false;
+                        }
+                        print!("{text}");
+                    }
+                    if !text.is_empty() {
+                        answer = text;
+                    }
                     if !wr.is_empty() {
                         web_results = wr;
+                    }
+                    if bu.is_some() {
+                        backend_uuid = bu;
+                    }
+                    if rwt.is_some() {
+                        read_write_token = rwt;
                     }
                 }
                 SseEvent::WebResults { items } => {
@@ -312,11 +355,19 @@ impl Client {
                     backend_uuid: uuid,
                     read_write_token: rwt,
                 } => {
-                    backend_uuid = uuid;
-                    read_write_token = rwt;
+                    if uuid.is_some() {
+                        backend_uuid = uuid;
+                    }
+                    if rwt.is_some() {
+                        read_write_token = rwt;
+                    }
                 }
                 SseEvent::SearchStatus { progress } => {
-                    eprintln!("\r🔍 {progress}");
+                    // Show search progress on stderr (only in interactive terminal)
+                    if stderr_tty {
+                        eprint!("\r🔍 {progress}          ");
+                        showed_progress = true;
+                    }
                 }
                 SseEvent::Metadata { thread_title, related_queries, display_model } => {
                     if let Some(model) = display_model {

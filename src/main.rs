@@ -275,8 +275,8 @@ async fn cmd_reason(
             )
             .await?;
 
-        backend_uuid = result.backend_uuid;
-        read_write_token = result.read_write_token;
+        backend_uuid = result.backend_uuid.clone();
+        read_write_token = result.read_write_token.clone();
     }
 
     loop {
@@ -317,8 +317,8 @@ async fn cmd_reason(
             }
         };
 
-        backend_uuid = result.backend_uuid;
-        read_write_token = result.read_write_token;
+        backend_uuid = result.backend_uuid.clone();
+        read_write_token = result.read_write_token.clone();
     }
 
     if let Some(ref uuid) = backend_uuid {
