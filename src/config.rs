@@ -23,12 +23,13 @@ pub const TURBO_MODEL: &str = "turbo";
 pub const MODELS: &[(&str, &str, &str)] = &[
     ("claude-4.8-opus", "claude48opus", "concise"),
     ("claude-4.8-opus-thinking", "claude48opusthinking", "copilot"),
-    ("claude-4.6-sonnet", "claude46sonnet", "concise"),
-    ("claude-4.6-sonnet-thinking", "claude46sonnetthinking", "copilot"),
+    ("claude-5.0-sonnet", "claude50sonnet", "concise"),
+    ("claude-5.0-sonnet-thinking", "claude50sonnetthinking", "copilot"),
     ("gpt-5.5", "gpt55", "concise"),
     ("gpt-5.5-thinking", "gpt55_thinking", "copilot"),
+    ("gpt-5.4-thinking", "gpt54_thinking", "copilot"),
     ("gemini-3.1-pro", "gemini31pro_high", "copilot"),
-    ("gemini-3.1-pro-thinking", "gemini31proprocessing", "copilot"),
+    ("glm-5.2", "glm_5_2", "copilot"),
     ("kimi", "kimik26instant", "concise"),
     ("kimi-thinking", "kimik26thinking", "copilot"),
 ];
@@ -45,8 +46,20 @@ pub fn find_model(name: &str) -> Option<(&'static str, &'static str)> {
 pub mod defaults {
     pub const SEARCH_MODEL: &str = super::TURBO_MODEL;
     pub const SEARCH_MODE: &str = "concise";
-    pub const ASK_MODEL: &str = "claude46sonnet";
+    pub const ASK_MODEL: &str = "claude50sonnet";
     pub const ASK_MODE: &str = "concise";
-    pub const REASON_MODEL: &str = "claude46sonnetthinking";
+    pub const REASON_MODEL: &str = "claude50sonnetthinking";
     pub const REASON_MODE: &str = "copilot";
+}
+
+/// Model committee (Council Mode): 3 heterogeneous experts answer in parallel,
+/// a 4th distinct model synthesizes. Members must span different providers —
+/// homogeneous stacking has near-zero effective independence (n_eff ≈ 2).
+pub mod committee {
+    /// Default committee members (display names): Anthropic / Z.ai / OpenAI-reasoning.
+    /// Heterogeneous across providers (the n_eff paper: homogeneous stacking ≈ useless).
+    pub const MEMBERS: &[&str] = &["claude-5.0-sonnet", "glm-5.2", "gpt-5.4-thinking"];
+    /// Default synthesizer — distinct from any member (avoids self-bias).
+    /// gemini-3.1-pro: PRO-tier (opus needs Max), non-member, different provider.
+    pub const SYNTHESIZER: &str = "gemini-3.1-pro";
 }

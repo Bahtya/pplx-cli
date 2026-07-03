@@ -8,8 +8,8 @@ optional true-multi-turn recipe.
 | Mode | Command | Default model | Search mode | Incognito | Multi-turn |
 |------|---------|---------------|-------------|-----------|------------|
 | search | `pplx-cli search "<q>"` | turbo | concise | ON | no |
-| ask | `pplx-cli ask "<q>" [flags]` | claude-4.6-sonnet (non-thinking) | concise | ON | no (single turn) |
-| reason | `pplx-cli reason [--query "<q>"]` | claude-4.6-sonnet-thinking | copilot | OFF | yes (interactive) |
+| ask | `pplx-cli ask "<q>" [flags]` | claude-5.0-sonnet (non-thinking) | concise | ON | no (single turn) |
+| reason | `pplx-cli reason [--query "<q>"]` | claude-5.0-sonnet-thinking | copilot | OFF | yes (interactive) |
 
 - `search` is always `turbo` (fast, free tier) — it's for links/snippets, not synthesis.
 - `ask` is single-turn and incognito; the temp thread is auto-deleted after the answer.
@@ -21,12 +21,13 @@ Hardcoded list — pass the display name to `--model`:
 
 | `--model` | Thinking | Notes |
 |-----------|----------|-------|
-| `claude-4.6-sonnet` | no | ask default |
-| `claude-4.6-sonnet-thinking` | yes | reason default |
+| `claude-5.0-sonnet` | no | ask default |
+| `claude-5.0-sonnet-thinking` | yes | reason default |
 | `claude-4.8-opus` | no | stronger, slower |
 | `claude-4.8-opus-thinking` | yes | strongest/slowest |
 | `gpt-5.5` / `gpt-5.5-thinking` | no/yes | |
-| `gemini-3.1-pro` / `-thinking` | no/yes | |
+| `gemini-3.1-pro` | yes | |
+| `glm-5.2` | yes | |
 | `kimi` / `kimi-thinking` | no/yes | |
 
 An unknown name prints the valid list and exits. `search` ignores `--model` (always turbo).

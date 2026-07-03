@@ -54,6 +54,7 @@ struct AskParams {
 }
 
 /// Result of a completed query.
+#[derive(Serialize)]
 pub struct QueryResult {
     /// Collected answer text (empty for search-only mode).
     #[allow(dead_code)]
@@ -123,7 +124,7 @@ impl Client {
         Ok(csrf.csrf_token)
     }
 
-    /// Execute a streaming query. Returns a stream of SSE events.
+    /// Execute a streaming query. Uploads `files`, then streams SSE events.
     pub async fn query_stream(
         &self,
         query: &str,
@@ -135,17 +136,34 @@ impl Client {
         language: &str,
         sources: &[&str],
     ) -> Result<impl Stream<Item = Result<SseEvent>>> {
-        // Upload files if any
-        let mut attachments = Vec::new();
-        if !files.is_empty() {
-            let upload_files: Vec<UploadFile> = files
-                .iter()
-                .map(|p| UploadFile::from_path(p))
-                .collect::<std::result::Result<_, _>>()?;
-            let urls = upload::upload_files(&self.http, &upload_files, self.timeout).await?;
-            attachments = urls;
-        }
+        let attachments = self.upload_files(files).await?;
+        self.query_stream_with_attachments(
+            query,
+            mode,
+            model_preference,
+            incognito,
+            attachments,
+            last_backend_uuid,
+            language,
+            sources,
+        )
+        .await
+    }
 
+    /// Like [`query_stream`](Self::query_stream) but takes pre-uploaded
+    /// attachment URLs. The committee fans this out across members sharing a
+    /// single upload instead of re-uploading per model.
+    async fn query_stream_with_attachments(
+        &self,
+        query: &str,
+        mode: &str,
+        model_preference: &str,
+        incognito: bool,
+        attachments: Vec<String>,
+        last_backend_uuid: Option<&str>,
+        language: &str,
+        sources: &[&str],
+    ) -> Result<impl Stream<Item = Result<SseEvent>>> {
         let sources_vec: Vec<String> = sources.iter().map(|s| s.to_string()).collect();
 
         let payload = AskPayload {
@@ -196,7 +214,51 @@ impl Client {
         Ok(SseStream::new(response.bytes_stream(), requested_model))
     }
 
-    /// Execute a query and collect the full response.
+    /// Authenticated GET to an arbitrary API path (e.g. `/rest/rate-limit/all`),
+    /// returning the raw response body. Uses the Chrome-fingerprinted client, so
+    /// it passes Cloudflare where plain HTTP clients get challenged.
+    pub async fn get_raw(&self, path: &str) -> Result<String> {
+        let resp = self
+            .http
+            .get(format!("{API_BASE_URL}{path}"))
+            .header(ORIGIN, PERPLEXITY_ORIGIN)
+            .header(REFERER, PERPLEXITY_REFERER)
+            .header("accept", "application/json, text/plain, */*")
+            .header("sec-fetch-site", "same-origin")
+            .header("sec-fetch-mode", "cors")
+            .header("sec-fetch-dest", "empty")
+            .header("x-app-apiclient", "default")
+            .header("x-app-apiversion", API_VERSION)
+            .send()
+            .await
+            .map_err(Error::SearchRequest)?;
+        let status = resp.status();
+        let text = resp.text().await.map_err(|e| Error::Server {
+            status: 0,
+            message: format!("body read failed: {e}"),
+        })?;
+        if !status.is_success() {
+            // Return status + (truncated) body so the caller can tell a Cloudflare
+            // challenge page from an app-level rejection.
+            let snippet: String = text.chars().take(400).collect();
+            return Ok(format!("[HTTP {}] {}", status.as_u16(), snippet));
+        }
+        Ok(text)
+    }
+
+    /// Upload `files` once, returning S3 attachment URLs (empty vec if none).
+    pub async fn upload_files(&self, files: &[&Path]) -> Result<Vec<String>> {
+        if files.is_empty() {
+            return Ok(Vec::new());
+        }
+        let upload_files: Vec<UploadFile> = files
+            .iter()
+            .map(|p| UploadFile::from_path(p))
+            .collect::<std::result::Result<_, _>>()?;
+        Ok(upload::upload_files(&self.http, &upload_files, self.timeout).await?)
+    }
+
+    /// Execute a query and collect the full response (uploads `files`).
     pub async fn query(
         &self,
         query: &str,
@@ -208,13 +270,40 @@ impl Client {
         language: &str,
         sources: &[&str],
     ) -> Result<QueryResult> {
+        let attachments = self.upload_files(files).await?;
+        self.query_with_attachments(
+            query,
+            mode,
+            model_preference,
+            incognito,
+            attachments,
+            last_backend_uuid,
+            language,
+            sources,
+        )
+        .await
+    }
+
+    /// Like [`query`](Self::query) but takes pre-uploaded attachment URLs.
+    /// The committee shares one upload across all members plus the synthesizer.
+    pub async fn query_with_attachments(
+        &self,
+        query: &str,
+        mode: &str,
+        model_preference: &str,
+        incognito: bool,
+        attachments: Vec<String>,
+        last_backend_uuid: Option<&str>,
+        language: &str,
+        sources: &[&str],
+    ) -> Result<QueryResult> {
         let stream = self
-            .query_stream(
+            .query_stream_with_attachments(
                 query,
                 mode,
                 model_preference,
                 incognito,
-                files,
+                attachments,
                 last_backend_uuid,
                 language,
                 sources,

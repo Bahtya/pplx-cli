@@ -36,13 +36,13 @@ pplx-cli ask "how does tokio::select! actually work?"
 pplx-cli ask "summarize this" --file report.pdf --sources scholar
 pplx-cli ask "quick one" --model gpt-5.5 --language zh-CN
 ```
-One question → one answer + a `Sources:` list. Default model is Claude Sonnet 4.6 (non-thinking, fast). Single-turn, incognito, the temp thread is auto-deleted. Flags: `--file` (attach, repeatable), `--model`, `--sources web,scholar,social`, `--language`.
+One question → one answer + a `Sources:` list. Default model is Claude Sonnet 5.0 (non-thinking, fast). Single-turn, incognito, the temp thread is auto-deleted. Flags: `--file` (attach, repeatable), `--model`, `--sources web,scholar,social`, `--language`.
 
 ### `reason` — deep, multi-turn (thinking model)
 ```bash
 pplx-cli reason --query "compare tokio and async-std"
 ```
-Uses a *thinking* model (Claude Sonnet 4.6 thinking), deeper but slower. Interactive: a question may span multiple lines — **press Enter on a blank line to submit**; `/quit` (or Ctrl-D) exits and deletes the thread.
+Uses a *thinking* model (Claude Sonnet 5.0 thinking), deeper but slower. Interactive: a question may span multiple lines — **press Enter on a blank line to submit**; `/quit` (or Ctrl-D) exits and deletes the thread.
 
 See `references/details.md` for the full model list and troubleshooting.
 

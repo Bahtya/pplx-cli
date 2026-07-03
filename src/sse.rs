@@ -1,7 +1,7 @@
 use bytes::{Bytes, BytesMut};
 use futures_util::Stream;
 use memchr::memmem;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::pin::Pin;
 use std::sync::LazyLock;
 use std::task::{Context, Poll};
@@ -56,7 +56,7 @@ pub enum SseEvent {
     Error { message: String },
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct WebResult {
     pub name: String,
     pub url: String,
@@ -427,7 +427,7 @@ mod tests {
     #[test]
     fn turbo_downgrade_carries_answer_sources_and_uuids() {
         // Regression: the downgrade path used to discard these.
-        match completed("turbo", Some("claude46sonnet"), false) {
+        match completed("turbo", Some("claude50sonnet"), false) {
             SseEvent::Answer {
                 text, web_results, backend_uuid, read_write_token, downgraded,
             } => {
@@ -456,7 +456,7 @@ mod tests {
 
     #[test]
     fn downgrade_flagged_only_once_per_stream() {
-        match completed("turbo", Some("claude46sonnet"), true) {
+        match completed("turbo", Some("claude50sonnet"), true) {
             SseEvent::Answer { downgraded, .. } => assert!(!downgraded),
             other => panic!("expected Answer, got {other:?}"),
         }
@@ -464,7 +464,7 @@ mod tests {
 
     #[test]
     fn honored_model_is_not_a_downgrade() {
-        match completed("claude-4.6-sonnet", Some("claude46sonnet"), false) {
+        match completed("claude-5.0-sonnet", Some("claude50sonnet"), false) {
             SseEvent::Answer { text, downgraded, .. } => {
                 assert!(!downgraded);
                 assert_eq!(text, "42");
@@ -482,7 +482,7 @@ mod tests {
             "read_write_token": "r2",
             "answer": "fallback answer"
         });
-        let req = Some("claude46sonnet".to_string());
+        let req = Some("claude50sonnet".to_string());
         match parse_message_event(&outer.to_string(), &req, false) {
             SseEvent::Answer {
                 text, web_results, backend_uuid, read_write_token, downgraded,
@@ -508,7 +508,7 @@ mod tests {
             "backend_uuid": "b-done",
             "read_write_token": "r-done"
         });
-        let req = Some("claude46sonnet".to_string());
+        let req = Some("claude50sonnet".to_string());
         match parse_message_event(&outer.to_string(), &req, false) {
             SseEvent::Done { backend_uuid, read_write_token, downgraded } => {
                 assert!(downgraded, "no-answer turbo COMPLETED must still flag downgrade");
@@ -546,7 +546,7 @@ mod tests {
 
         let mut finished = false;
         let mut done_sent = false;
-        let req = Some("claude46sonnet".to_string());
+        let req = Some("claude50sonnet".to_string());
         let mut dd = false;
 
         let e1 = try_parse_events(&mut buf, &mut finished, &mut done_sent, &req, &mut dd);
@@ -571,7 +571,7 @@ mod tests {
             "display_model": "turbo",
             "answer": "no ids here"
         });
-        let req = Some("claude46sonnet".to_string());
+        let req = Some("claude50sonnet".to_string());
         match parse_message_event(&outer.to_string(), &req, false) {
             SseEvent::Answer { text, backend_uuid, read_write_token, downgraded, .. } => {
                 assert!(downgraded);
@@ -595,12 +595,12 @@ mod tests {
         });
         let outer = serde_json::json!({
             "status": "COMPLETED",
-            "display_model": "claude-4.6-sonnet",
+            "display_model": "claude-5.0-sonnet",
             "backend_uuid": "b",
             "read_write_token": "r",
             "text": [{"step_type": "FINAL", "content": {"answer": payload.to_string()}}]
         });
-        let req = Some("claude46sonnet".to_string());
+        let req = Some("claude50sonnet".to_string());
         match parse_message_event(&outer.to_string(), &req, false) {
             SseEvent::Answer { web_results, .. } => {
                 assert_eq!(web_results.len(), 2);
@@ -619,12 +619,12 @@ mod tests {
         let payload = serde_json::json!({"answer": "a", "web_results": []});
         let outer = serde_json::json!({
             "status": "COMPLETED",
-            "display_model": "claude-4.6-sonnet",
+            "display_model": "claude-5.0-sonnet",
             "backend_uuid": "b",
             "read_write_token": "r",
             "text": [{"step_type": "FINAL", "content": {"answer": payload.to_string()}}]
         });
-        let req = Some("claude46sonnet".to_string());
+        let req = Some("claude50sonnet".to_string());
         match parse_message_event(&outer.to_string(), &req, false) {
             SseEvent::Answer { text, web_results, .. } => {
                 assert_eq!(text, "a");
