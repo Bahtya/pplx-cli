@@ -181,6 +181,9 @@ pub async fn run(
 
 /// Build the Council synthesis prompt embedding the question + surviving
 /// expert answers and prescribing the strict 4-part output format.
+///
+/// MUST stay in sync with `bench/search.py::council_prompt` — the search
+/// replays this synthesis over cached answers, so the prompts must match.
 fn build_synthesis_prompt(query: &str, survivors: &[&MemberResult]) -> String {
     let mut s = String::new();
     s.push_str(
@@ -219,6 +222,8 @@ fn header_key(line: &str) -> Option<&'static str> {
 
 /// Best-effort split of the synthesis text into the four sections by header.
 /// Lines before any header are dropped; the full text is preserved in `raw`.
+///
+/// MUST stay in sync with `bench/search.py::parse_comprehensive`.
 fn parse_sections(raw: &str) -> (String, String, String, String) {
     let mut sections: HashMap<&str, Vec<&str>> = HashMap::new();
     let mut current: Option<&str> = None;
@@ -246,7 +251,24 @@ fn parse_sections(raw: &str) -> (String, String, String, String) {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_sections;
+    use super::{build_synthesis_prompt, parse_sections, MemberResult};
+
+    #[test]
+    fn synthesis_prompt_embeds_query_members_and_headers() {
+        let m = MemberResult {
+            model: "glm-5.2".into(),
+            answer: "blue light scatters most".into(),
+            sources: vec![],
+            latency_ms: None,
+            error: None,
+        };
+        let p = build_synthesis_prompt("why is the sky blue?", &[&m]);
+        assert!(p.contains("why is the sky blue?"));
+        assert!(p.contains("glm-5.2") && p.contains("blue light scatters most"));
+        for h in ["## Consensus", "## Disagreement", "## Unique Findings", "## Comprehensive Analysis"] {
+            assert!(p.contains(h), "prompt must prescribe {h}");
+        }
+    }
 
     #[test]
     fn parses_four_sections() {

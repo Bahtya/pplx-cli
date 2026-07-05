@@ -272,6 +272,8 @@ def main():
     lock = threading.Lock()
     workers = max(1, min(args.concurrency, len(questions)))
     print(f"Concurrency: {workers} question(s) in parallel")
+    if args.concurrency > 3:
+        sys.stderr.write("WARNING: --concurrency > 3 reliably triggers Perplexity 429s; consider 1-3.\n")
 
     def do(q):
         process_question(q, pplx, args.proxy, singles, args.judge,

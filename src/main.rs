@@ -76,15 +76,13 @@ enum Commands {
         #[arg(long, default_value = "en-US")]
         language: String,
     },
-    /// Show current rate-limit status (queries /rest/rate-limit/all)
-    Ratelimit,
     /// Model committee: 3 models answer in parallel, a synthesizer merges them
     Committee {
         /// Question for the committee
         query: String,
-        /// Committee member models (3 different providers recommended)
-        #[arg(long, value_delimiter = ',', default_value = "claude-5.0-sonnet,glm-5.2,gpt-5.4-thinking")]
-        models: Vec<String>,
+        /// Committee member models (default: built-in 3-provider set — config::committee::MEMBERS)
+        #[arg(long, value_delimiter = ',')]
+        models: Option<Vec<String>>,
         /// Synthesizer model (distinct from members)
         #[arg(long, default_value = "gemini-3.1-pro")]
         synthesizer: String,
@@ -233,7 +231,6 @@ async fn main() {
         Commands::Committee { query, models, synthesizer, files, sources, language, raw } => {
             cmd_committee(&client, json, &query, &models, &synthesizer, &files, &sources, &language, raw).await
         }
-        Commands::Ratelimit => cmd_ratelimit(&client).await,
     };
 
     if let Err(e) = result {
@@ -421,18 +418,22 @@ async fn cmd_committee(
     client: &Client,
     json: bool,
     query: &str,
-    members: &[String],
+    models: &Option<Vec<String>>,
     synthesizer: &str,
     files: &[PathBuf],
     sources: &[String],
     language: &str,
     raw: bool,
 ) -> error::Result<()> {
+    // Single source of truth: default members come from config::committee::MEMBERS.
+    let members: Vec<String> = models
+        .clone()
+        .unwrap_or_else(|| config::committee::MEMBERS.iter().map(|s| s.to_string()).collect());
     let file_refs: Vec<&std::path::Path> = files.iter().map(|p| p.as_path()).collect();
     let sources_ref: Vec<&str> = sources.iter().map(|s| s.as_str()).collect();
 
     let result =
-        committee::run(client, query, members, synthesizer, &file_refs, &sources_ref, language)
+        committee::run(client, query, &members, synthesizer, &file_refs, &sources_ref, language)
             .await?;
 
     if json {
@@ -441,19 +442,6 @@ async fn cmd_committee(
     }
 
     print_committee_human(&result, raw);
-    Ok(())
-}
-
-async fn cmd_ratelimit(client: &Client) -> error::Result<()> {
-    // /rest/ endpoints require the version+source query params (cf. delete_thread).
-    let path = format!("/rest/rate-limit/all?version={}&source=default", config::API_VERSION);
-    let body = client.get_raw(&path).await?;
-    // Pretty-print if it's JSON, else print raw.
-    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&body) {
-        println!("{}", serde_json::to_string_pretty(&v).unwrap_or(body));
-    } else {
-        println!("{body}");
-    }
     Ok(())
 }
 

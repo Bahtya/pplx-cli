@@ -111,7 +111,7 @@ def parse_ranks(text):
 
 
 def council_prompt(query, member_answers):
-    """Mirrors committee.rs build_synthesis_prompt exactly."""
+    """MUST stay in sync with committee.rs::build_synthesis_prompt (the search replays the CLI's synthesis over cached answers)."""
     s = ("You are the synthesizer of a model committee. Several expert models "
          "independently answered the SAME question. Produce one synthesis.\n\n"
          f"Question: {query}\n\nExpert answers:")
@@ -127,7 +127,7 @@ def council_prompt(query, member_answers):
 
 
 def parse_comprehensive(text):
-    """Extract the '## Comprehensive Analysis' section body (mirror committee.rs)."""
+    """Extract the '## Comprehensive Analysis' section body. MUST stay in sync with committee.rs::parse_sections."""
     keys = ["consensus", "disagreement", "unique", "comprehensive"]
     sections, current = {}, None
     for line in (text or "").splitlines():
@@ -216,7 +216,8 @@ def collect_singles(pplx, proxy, pool_models, subset, singles_path, lock):
         append_jsonl(singles_path, {"model": m, "qid": q["id"], "answer": ans}, lock)
         return (m, q["id"], ans)
 
-    with ThreadPoolExecutor(max_workers=8) as ex:
+    # 3, not higher: Perplexity 429s on bursty/concurrent ask() calls.
+    with ThreadPoolExecutor(max_workers=3) as ex:
         for m, qid, ans in ex.map(work, jobs):
             singles[(m, qid)] = ans
     return singles
@@ -340,7 +341,8 @@ def main():
         if key in done_keys:
             sc = results[key]
         else:
-            judge = non_members[si % len(non_members)]
+            judge_choices = [m for m in non_members if m != synth]  # judge must differ from the synth too (avoid self-preference)
+            judge = judge_choices[si % len(judge_choices)]
             print(f"  synth={synth} judge={judge}", flush=True)
             sc = eval_triple(best, synth, judge, subset, singles, pplx, args.proxy)
             rec = {"triple": ",".join(best), "synth": synth, "judge": judge, **{k: v for k, v in sc.items() if k != "per_q"}}
