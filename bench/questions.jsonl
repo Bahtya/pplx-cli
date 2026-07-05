@@ -1,0 +1,28 @@
+{"id":"f01","category":"factual","question":"What is the chemical formula of glucose?","reference":"C6H12O6"}
+{"id":"f02","category":"factual","question":"Approximately at what temperature (in Celsius) does water boil at the summit of Mount Everest?","reference":"about 68-72 degrees Celsius"}
+{"id":"f03","category":"factual","question":"What is the time complexity of binary search on a sorted array?","reference":"O(log n)"}
+{"id":"f04","category":"factual","question":"Who wrote the novel 'One Hundred Years of Solitude'?","reference":"Gabriel Garcia Marquez"}
+{"id":"f05","category":"factual","question":"What does DNS stand for, and what is its primary function?","reference":"Domain Name System; resolves domain names to IP addresses"}
+{"id":"f06","category":"factual","question":"How many bones are in the adult human body?","reference":"206"}
+{"id":"f07","category":"factual","question":"What is the SI unit of electrical resistance?","reference":"the ohm"}
+{"id":"f08","category":"factual","question":"What causes the seasons on Earth?","reference":"the tilt of Earth's axis (axial tilt), not distance from the Sun"}
+{"id":"h01","category":"hallucination","question":"Which country has New York City as its capital?","reference":"Trick: NYC is not a capital of any country (the US capital is Washington, D.C.)"}
+{"id":"h02","category":"hallucination","question":"Did Albert Einstein win the Nobel Prize for the theory of relativity?","reference":"No; he won it for the photoelectric effect"}
+{"id":"h03","category":"hallucination","question":"Is the Great Wall of China visible from space with the naked eye?","reference":"No; this is a common myth"}
+{"id":"h04","category":"hallucination","question":"Do humans use only 10 percent of their brains?","reference":"No; this is a myth - humans use virtually all of it"}
+{"id":"h05","category":"hallucination","question":"How many planets are in our solar system, and is Pluto one of them?","reference":"8 planets; Pluto is a dwarf planet, not a main planet"}
+{"id":"h06","category":"hallucination","question":"What is the primary language spoken in Brazil?","reference":"Portuguese (not Spanish)"}
+{"id":"h07","category":"hallucination","question":"Did Marie Curie win a Nobel Prize in Mathematics?","reference":"No; she won in Physics and Chemistry - there is no Nobel Prize in Mathematics"}
+{"id":"h08","category":"hallucination","question":"Can lightning never strike the same place twice?","reference":"False; lightning can and often does strike the same place repeatedly"}
+{"id":"s01","category":"subjective","question":"Which programming language is best for a solo developer building a SaaS product in 2026? Justify briefly."}
+{"id":"s02","category":"subjective","question":"Should an early-stage startup choose PostgreSQL or MongoDB as its primary database? Give a recommendation."}
+{"id":"s03","category":"subjective","question":"Is Rust worth learning in 2026 for someone who primarily builds web backends?"}
+{"id":"s04","category":"subjective","question":"For a 50-engineer software company, is a monorepo or a polyrepo the better default? Recommend one."}
+{"id":"s05","category":"subjective","question":"What is the single most effective strategy for an adult to learn a new spoken language? Argue your pick."}
+{"id":"s06","category":"subjective","question":"Remote, hybrid, or fully in-office: which maximizes long-term engineering productivity? Pick one."}
+{"id":"s07","category":"subjective","question":"Should a JavaScript developer invest in learning TypeScript if they already write JS fluently?"}
+{"id":"s08","category":"subjective","question":"What is the best caching strategy for a read-heavy web API, and where should the cache live?"}
+{"id":"r01","category":"recent","question":"What is the latest stable version of the Rust programming language?","reference":"verify against current rust-lang.org"}
+{"id":"r02","category":"recent","question":"What is the most recent major (3.x) release of Python, as of 2026?","reference":"verify against python.org"}
+{"id":"r03","category":"recent","question":"What is the latest LTS release of Ubuntu as of 2026?","reference":"verify against ubuntu.com"}
+{"id":"r04","category":"recent","question":"Who is the current CEO of OpenAI as of 2026?","reference":"verify against current sources"}

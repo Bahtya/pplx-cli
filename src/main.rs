@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 mod client;
+mod committee;
 mod config;
 mod error;
 mod sse;
@@ -18,6 +19,10 @@ struct Cli {
     /// Proxy URL (http://, https://, socks5://)
     #[arg(long, global = true, env = "PERPLEXITY_PROXY")]
     proxy: Option<String>,
+
+    /// Emit machine-readable JSON (committee / ask / search)
+    #[arg(long, global = true)]
+    json: bool,
 
     #[command(subcommand)]
     command: Commands,
@@ -40,7 +45,7 @@ enum Commands {
     Ask {
         /// Question to ask
         query: String,
-        /// Model to use (default: claude-4.8-opus)
+        /// Model to use (default: claude-5.0-sonnet)
         #[arg(long)]
         model: Option<String>,
         /// Files to attach
@@ -58,7 +63,7 @@ enum Commands {
         /// Optional initial question (skips prompt for first turn)
         #[arg(long)]
         query: Option<String>,
-        /// Model to use (default: claude-4.8-opus-thinking)
+        /// Model to use (default: claude-5.0-sonnet-thinking)
         #[arg(long)]
         model: Option<String>,
         /// Files to attach (applied to first turn only)
@@ -70,6 +75,29 @@ enum Commands {
         /// Language code (ISO 639)
         #[arg(long, default_value = "en-US")]
         language: String,
+    },
+    /// Model committee: 3 models answer in parallel, a synthesizer merges them
+    Committee {
+        /// Question for the committee
+        query: String,
+        /// Committee member models (default: built-in 3-provider set — config::committee::MEMBERS)
+        #[arg(long, value_delimiter = ',')]
+        models: Option<Vec<String>>,
+        /// Synthesizer model (distinct from members)
+        #[arg(long, default_value = "gemini-3.1-pro")]
+        synthesizer: String,
+        /// Files to attach (shared across all members + synthesizer)
+        #[arg(long = "file")]
+        files: Vec<PathBuf>,
+        /// Information sources: web, scholar, social
+        #[arg(long, value_delimiter = ',', default_value = "web")]
+        sources: Vec<String>,
+        /// Language code (ISO 639)
+        #[arg(long, default_value = "en-US")]
+        language: String,
+        /// Also print each member's raw answer
+        #[arg(long)]
+        raw: bool,
     },
 }
 
@@ -189,26 +217,20 @@ async fn main() {
         process::exit(1);
     }
 
+    let json = cli.json;
     let result = match cli.command {
-        Commands::Search {
-            query,
-            sources,
-            language,
-        } => cmd_search(&client, &query, &sources, &language).await,
-        Commands::Ask {
-            query,
-            model,
-            files,
-            sources,
-            language,
-        } => cmd_ask(&client, &query, &model, &files, &sources, &language).await,
-        Commands::Reason {
-            query,
-            model,
-            files,
-            sources,
-            language,
-        } => cmd_reason(&client, &query, &model, &files, &sources, &language).await,
+        Commands::Search { query, sources, language } => {
+            cmd_search(&client, json, &query, &sources, &language).await
+        }
+        Commands::Ask { query, model, files, sources, language } => {
+            cmd_ask(&client, json, &query, &model, &files, &sources, &language).await
+        }
+        Commands::Reason { query, model, files, sources, language } => {
+            cmd_reason(&client, &query, &model, &files, &sources, &language).await
+        }
+        Commands::Committee { query, models, synthesizer, files, sources, language, raw } => {
+            cmd_committee(&client, json, &query, &models, &synthesizer, &files, &sources, &language, raw).await
+        }
     };
 
     if let Err(e) = result {
@@ -219,6 +241,7 @@ async fn main() {
 
 async fn cmd_search(
     client: &Client,
+    json: bool,
     query: &str,
     sources: &[String],
     language: &str,
@@ -239,7 +262,12 @@ async fn cmd_search(
         )
         .await?;
 
-    print_web_results(&result.web_results);
+    if json {
+        let out = serde_json::json!({ "model": defaults::SEARCH_MODEL, "results": result.web_results });
+        println!("{out}");
+    } else {
+        print_web_results(&result.web_results);
+    }
 
     if let Some(ref uuid) = result.backend_uuid {
         if let Err(e) = client.delete_thread(uuid, result.read_write_token.as_deref()).await {
@@ -252,6 +280,7 @@ async fn cmd_search(
 
 async fn cmd_ask(
     client: &Client,
+    json: bool,
     query: &str,
     model: &Option<String>,
     files: &[PathBuf],
@@ -261,6 +290,25 @@ async fn cmd_ask(
     let (model_pref, mode) = resolve_model(model, defaults::ASK_MODEL, defaults::ASK_MODE);
     let file_refs: Vec<&std::path::Path> = files.iter().map(|p| p.as_path()).collect();
     let sources_ref: Vec<&str> = sources.iter().map(|s| s.as_str()).collect();
+
+    if json {
+        // Machine mode: collect (no streaming) and emit JSON.
+        let result = client
+            .query(query, &mode, &model_pref, true, &file_refs, None, language, &sources_ref)
+            .await?;
+        if let Some(ref uuid) = result.backend_uuid {
+            if let Err(e) = client.delete_thread(uuid, result.read_write_token.as_deref()).await {
+                eprintln!("⚠️  Thread cleanup failed: {e}");
+            }
+        }
+        let out = serde_json::json!({
+            "model": model_pref,
+            "answer": result.answer,
+            "sources": result.web_results,
+        });
+        println!("{out}");
+        return Ok(());
+    }
 
     let result = client
         .query_live(
@@ -364,4 +412,96 @@ async fn cmd_reason(
     }
 
     Ok(())
+}
+
+async fn cmd_committee(
+    client: &Client,
+    json: bool,
+    query: &str,
+    models: &Option<Vec<String>>,
+    synthesizer: &str,
+    files: &[PathBuf],
+    sources: &[String],
+    language: &str,
+    raw: bool,
+) -> error::Result<()> {
+    // Single source of truth: default members come from config::committee::MEMBERS.
+    let members: Vec<String> = models
+        .clone()
+        .unwrap_or_else(|| config::committee::MEMBERS.iter().map(|s| s.to_string()).collect());
+    let file_refs: Vec<&std::path::Path> = files.iter().map(|p| p.as_path()).collect();
+    let sources_ref: Vec<&str> = sources.iter().map(|s| s.as_str()).collect();
+
+    let result =
+        committee::run(client, query, &members, synthesizer, &file_refs, &sources_ref, language)
+            .await?;
+
+    if json {
+        println!("{}", serde_json::to_string(&result).unwrap());
+        return Ok(());
+    }
+
+    print_committee_human(&result, raw);
+    Ok(())
+}
+
+fn print_committee_human(result: &committee::CommitteeResult, raw: bool) {
+    let s = &result.synthesis;
+    eprintln!(
+        "🏛️  Committee [{}] → synth {} | {:.1}s",
+        result
+            .members
+            .iter()
+            .map(|m| m.model.as_str())
+            .collect::<Vec<_>>()
+            .join(", "),
+        s.model,
+        result.latency_ms as f64 / 1000.0
+    );
+
+    if raw {
+        for m in &result.members {
+            println!("\n──────── {} ────────", m.model);
+            if let Some(e) = &m.error {
+                println!("❌ {e}");
+            } else {
+                println!("{}", m.answer);
+            }
+        }
+    }
+
+    println!("\n==================== SYNTHESIS ({}) ====================", s.model);
+    let print_section = |title: &str, body: &str| {
+        if !body.is_empty() {
+            println!("\n■ {title}\n{}", body);
+        }
+    };
+    if s.consensus.is_empty()
+        && s.disagreement.is_empty()
+        && s.unique_findings.is_empty()
+        && s.comprehensive.is_empty()
+    {
+        // Header parse failed — fall back to the raw synthesis text.
+        println!("{}", s.raw);
+    } else {
+        print_section("Consensus", &s.consensus);
+        print_section("Disagreement", &s.disagreement);
+        print_section("Unique Findings", &s.unique_findings);
+        print_section("Comprehensive Analysis", &s.comprehensive);
+    }
+
+    // Merged, URL-deduped sources across all members.
+    let mut seen = std::collections::HashSet::new();
+    let merged: Vec<&sse::WebResult> = result
+        .members
+        .iter()
+        .flat_map(|m| m.sources.iter())
+        .filter(|r| seen.insert(r.url.as_str()))
+        .collect();
+    if !merged.is_empty() {
+        println!("\nSources:");
+        for (i, r) in merged.iter().enumerate() {
+            println!("[{}] {} — {}", i + 1, r.name, r.url);
+        }
+    }
 }

@@ -1,3 +1,5 @@
 /target
 /local/*/target
 *.rs.bk
+/bench/results
+__pycache__/

@@ -13,15 +13,15 @@ Inspired by [`perplexity-web-api-mcp`](https://github.com/Bahtya/perplexity-web-
 - 📎 **File attachments** — upload PDFs, images, text, code for analysis
 - 🔍 **TLS fingerprint** — Chrome 136 emulation via `rquest-util` (hard requirement)
 - 🔀 **Proxy support** — HTTP, HTTPS, and SOCKS5
-- 🤖 **Hardcoded LLM models** — Claude 4.8 Opus, GPT-5.5, Gemini 3.1 Pro, Kimi K2
+- 🤖 **Hardcoded LLM models** — Claude Sonnet 5.0, Claude Opus 4.8, GPT-5.5, Gemini 3.1 Pro, GLM-5.2, Kimi K2.6
 
 ## Modes
 
 | Mode | Description | Model | Incognito | Multi-turn |
 |------|-------------|-------|-----------|------------|
 | `search` | Quick web search (titles, URLs, snippets only) | turbo | ✅ ON | ❌ |
-| `ask` | AI question-answering with sources | claude-4.6-sonnet | ✅ ON | ❌ |
-| `reason` | Deep reasoning, interactive multi-turn | claude-4.6-sonnet-thinking | ❌ OFF | ✅ |
+| `ask` | AI question-answering with sources | claude-5.0-sonnet | ✅ ON | ❌ |
+| `reason` | Deep reasoning, interactive multi-turn | claude-5.0-sonnet-thinking | ❌ OFF | ✅ |
 
 - **ask** uses non-thinking models, incognito ON, single query
 - **reason** uses thinking models, incognito OFF, preserves conversation history for follow-ups
@@ -114,7 +114,7 @@ pplx-cli reason --query "compare tokio and async-std" --file Cargo.toml
 Enters an interactive multi-turn session. Type follow-up questions; the same thread (via `backend_uuid`) is reused. A question may span multiple lines — press **Enter twice** (a blank line) to submit it. Type `/quit` or press `Ctrl-D` to exit (the thread is then deleted).
 
 ```
-🤔 Model: claude46sonnetthinking | blank line to send, /quit to exit
+🤔 Model: claude50sonnetthinking | blank line to send, /quit to exit
 > compare tokio and async-std
 [streaming answer...]
 
@@ -131,14 +131,14 @@ Use `--model <name>` with `ask` or `reason`:
 
 | Name | Thinking |
 |------|----------|
+| `claude-5.0-sonnet` | ❌ |
+| `claude-5.0-sonnet-thinking` | ✅ |
 | `claude-4.8-opus` | ❌ |
 | `claude-4.8-opus-thinking` | ✅ |
-| `claude-4.6-sonnet` | ❌ |
-| `claude-4.6-sonnet-thinking` | ✅ |
 | `gpt-5.5` | ❌ |
 | `gpt-5.5-thinking` | ✅ |
-| `gemini-3.1-pro` | ❌ |
-| `gemini-3.1-pro-thinking` | ✅ |
+| `gemini-3.1-pro` | ✅ |
+| `glm-5.2` | ✅ |
 | `kimi` | ❌ |
 | `kimi-thinking` | ✅ |
 
