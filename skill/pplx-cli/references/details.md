@@ -25,7 +25,7 @@ Hardcoded list — pass the display name to `--model`:
 | `claude-5.0-sonnet-thinking` | yes | reason default |
 | `claude-4.8-opus` | no | stronger, slower |
 | `claude-4.8-opus-thinking` | yes | strongest/slowest |
-| `gpt-5.5` / `gpt-5.5-thinking` | no/yes | |
+| `gpt-5.5` / `gpt-5.5-thinking` / `gpt-5.4-thinking` | no/yes/yes | `gpt-5.4-thinking` is the committee default (PRO-tier; `gpt-5.5` needs Max) |
 | `gemini-3.1-pro` | yes | |
 | `glm-5.2` | yes | |
 | `kimi` / `kimi-thinking` | no/yes | |

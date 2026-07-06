@@ -13,7 +13,8 @@ Inspired by [`perplexity-web-api-mcp`](https://github.com/Bahtya/perplexity-web-
 - 📎 **File attachments** — upload PDFs, images, text, code for analysis
 - 🔍 **TLS fingerprint** — Chrome 136 emulation via `rquest-util` (hard requirement)
 - 🔀 **Proxy support** — HTTP, HTTPS, and SOCKS5
-- 🤖 **Hardcoded LLM models** — Claude Sonnet 5.0, Claude Opus 4.8, GPT-5.5, Gemini 3.1 Pro, GLM-5.2, Kimi K2.6
+- 🤖 **Hardcoded LLM models** — Claude Sonnet 5.0, Claude Opus 4.8, GPT-5.5 / GPT-5.4-thinking, Gemini 3.1 Pro, GLM-5.2, Kimi K2.6
+- 🏛️ **Model committee** — 3 models answer in parallel + a synthesizer (Council 4-part output); see [Committee](#committee-multi-model)
 
 ## Modes
 
@@ -137,10 +138,24 @@ Use `--model <name>` with `ask` or `reason`:
 | `claude-4.8-opus-thinking` | ✅ |
 | `gpt-5.5` | ❌ |
 | `gpt-5.5-thinking` | ✅ |
+| `gpt-5.4-thinking` | ✅ (committee default; PRO-tier — `gpt-5.5` needs Max) |
 | `gemini-3.1-pro` | ✅ |
 | `glm-5.2` | ✅ |
 | `kimi` | ❌ |
 | `kimi-thinking` | ✅ |
+
+## Committee (multi-model)
+
+`pplx-cli committee "<question>"` runs a 3-model **committee**: three experts answer the same question in parallel, then a distinct synthesizer model merges them into a structured Council result — **consensus / disagreement / unique findings / comprehensive analysis**.
+
+- Default members: `claude-5.0-sonnet`, `glm-5.2`, `gpt-5.4-thinking` — 3 different providers (heterogeneity is the point). All PRO-tier; `gpt-5.5` / `claude-4.8-opus` need Max and aren't used here.
+- Default synthesizer: `gemini-3.1-pro` (distinct from the members, to avoid self-bias).
+- Override with `--models a,b,c` and `--synthesizer <m>`; `--raw` also prints each member's raw answer.
+- Latency ≈ 4× a single `ask` (parallel fan-out + synthesis).
+
+```bash
+pplx-cli committee "tokio vs async-std for a high-throughput server — recommend one"
+```
 
 ## How It Works
 

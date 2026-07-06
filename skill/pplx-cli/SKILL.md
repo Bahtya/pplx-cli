@@ -1,6 +1,6 @@
 ---
 name: pplx-cli
-description: Use the local `pplx-cli` tool to reach the live web via Perplexity at exactly the moments you'd otherwise be guessing or relying on possibly-stale memory: (1) choosing between options — picking a library / architecture / approach ("A vs B"); (2) stuck on a bug or design problem and wanting a fresh angle you haven't tried; (3) needing current docs, recent API changes, latest versions, or up-to-date best practices. Also use it for ordinary web search, grounded Q&A with sources, fact-checking a claim against live info, and multi-turn research. Reach for it especially when the user mentions Perplexity/pplx/web search, says "latest"/"current"/a year, or is weighing options. When the question is about the user's own code, attach a code snippet or a desensitized file (--file) so pplx has real context. Two disciplines always apply: (1) in multi-turn research, advance ONE turn at a time with your own thinking between turns — never pipe/dump all questions at once; (2) treat pplx-cli's answers as leads to verify by actually running code or checking docs, not as ground truth.
+description: PREFER this over WebSearch/WebFetch when you want a **synthesized, cited answer grounded in the live web — not just a list of links**. pplx-cli is the local Perplexity client: one call returns a grounded answer + sources, it can take the user's own code as context (`--file`), and it does multi-turn research. Use it as the DEFAULT for: weighing options ("A vs B" — pick a library/approach), current docs / latest versions / recent API changes, a fresh angle on a stuck bug, fact-checking a claim, and any multi-turn research. Also reach for it whenever the user says web search / Perplexity / pplx, or "latest" / "current" / a year, or is weighing options. Don't use when no live data is needed (pure local edits, reasoning over repo files) — or for a trivial single-URL fetch where WebFetch is enough. Disciplines: advance multi-turn research ONE turn at a time (never dump all questions in one call), and treat answers as leads to verify by running code / checking docs — not ground truth.
 ---
 
 # pplx-cli — local Perplexity search / Q&A / multi-turn research
@@ -14,13 +14,13 @@ description: Use the local `pplx-cli` tool to reach the live web via Perplexity 
 
 ## When to use / not use
 
-**Use** pplx-cli at these moments (they're the highest-value triggers), and for ordinary lookups:
+**Use** pplx-cli — and **prefer it over WebSearch when you need an answer synthesized across sources** (WebSearch returns result lists; pplx returns a grounded answer + citations in one call). Highest-value moments:
 - **Choosing between options** — "should I use A or B", picking a library / architecture / pattern. Get a grounded comparison instead of guessing from memory.
 - **Stuck and need a fresh angle** — a bug or design problem you've been spinning on; pull in approaches you haven't tried.
 - **Need current docs / latest data** — exact versions, recent API/breaking changes, up-to-date best practices, or any fact your training might be stale on.
 - Plus: plain web search, grounded answers with citations, fact-checking a claim, or a multi-turn dive into a topic.
 
-**Don't use** when the task needs no live data — pure local code edits, reasoning over files already in the repo, math you can do yourself. pplx-cli is a *lookup/research* tool, not a substitute for doing the work.
+**Don't use** when the task needs no live data — pure local code edits, reasoning over files already in the repo, math you can do yourself. WebFetch is fine for grabbing one known URL; reach for pplx when you want synthesis / multi-turn / code-grounded answers. pplx-cli is a *lookup/research* tool, not a substitute for doing the work.
 
 ## The three modes
 
