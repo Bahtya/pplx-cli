@@ -7,6 +7,7 @@
 import argparse
 import asyncio
 from datetime import datetime, timezone
+import json
 from pathlib import Path
 import sys
 import uuid
@@ -45,6 +46,16 @@ async def collect(objective, queries, urls, client):
                 )
                 if result.isError or not text.strip():
                     raise RuntimeError(f"{name} failed: {text or 'no text returned'}")
+                # Parallel can report per-page extraction errors inside a
+                # successful MCP response. Preserve the old file in that case.
+                try:
+                    payload = json.loads(text)
+                except json.JSONDecodeError:
+                    payload = None
+                if isinstance(payload, dict) and (
+                    payload.get("errors") or ("results" in payload and not payload["results"])
+                ):
+                    raise RuntimeError(f"{name} failed: errors or no results: {text}")
                 sections.extend([f"## {name}", text])
     return "\n\n".join(sections) + "\n"
 

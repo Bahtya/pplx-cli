@@ -42,8 +42,9 @@ pplx-cli ask \
 ```
 
 Collection has a 60-second total deadline; use `--timeout 120` for a longer one.
-A failed tool call or timeout exits unsuccessfully without replacing the output
-file. Run the `pplx-cli` command only after collection succeeds and you have
+A failed tool call, per-page extraction error, empty result set, or timeout exits
+unsuccessfully without replacing the output file. Even partial fetch failures
+leave the previous file intact. Run the `pplx-cli` command only after collection succeeds and you have
 reviewed the file. To run the collector's offline tests:
 
 ```bash

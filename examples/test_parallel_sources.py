@@ -52,10 +52,24 @@ class SourceCollectionTests(unittest.IsolatedAsyncioTestCase):
                     await asyncio.Event().wait()
                 finally:
                     self.cancelled.set()
-            text = {
-                "web_search": "Tokio docs https://docs.rs/tokio/\nCancellation safety guidance",
-                "web_fetch": "https://docs.rs/tokio/\nA cancelled future is dropped.",
+            payload = {
+                "web_search": {"search_id": "search_fixture", "results": [{
+                    "url": "https://docs.rs/tokio/", "title": "Tokio docs",
+                    "excerpts": ["Cancellation safety guidance"],
+                }]},
+                "web_fetch": {"extract_id": "extract_fixture", "results": [{
+                    "url": "https://docs.rs/tokio/", "title": "Tokio docs",
+                    "excerpts": ["A cancelled future is dropped."],
+                }], "errors": []},
             }[name]
+            if self.mode == "page_error" and name == "web_fetch":
+                payload["results"] = []
+                payload["errors"] = [{"url": "https://docs.rs/tokio/", "error_type": "FETCH_ERROR"}]
+            if self.mode == "partial_error" and name == "web_fetch":
+                payload["errors"] = [{"url": "https://other.example/", "error_type": "FETCH_ERROR"}]
+            if self.mode == "no_results":
+                payload["results"] = []
+            text = json.dumps(payload)
             result = {"content": [{"type": "text", "text": text}]}
             if self.mode == "tool_error" and name == "web_fetch":
                 result = {"isError": True, "content": [{"type": "text", "text": "Fetch failed"}]}
@@ -111,6 +125,24 @@ class SourceCollectionTests(unittest.IsolatedAsyncioTestCase):
             await self.run_example()
         self.assertIn("web_search failed: no text returned", "".join(traceback.format_exception(caught.exception)))
         self.assertFalse(self.output.exists())
+
+    async def test_embedded_page_errors_preserve_existing_file(self):
+        for mode in ("page_error", "partial_error"):
+            with self.subTest(mode=mode):
+                self.mode = mode
+                self.output.write_text("previous sources")
+                with self.assertRaises(Exception) as caught:
+                    await self.run_example("--url", "https://docs.rs/tokio/")
+                self.assertIn("FETCH_ERROR", "".join(traceback.format_exception(caught.exception)))
+                self.assertEqual(self.output.read_text(), "previous sources")
+
+    async def test_no_search_results_preserves_existing_file(self):
+        self.mode = "no_results"
+        self.output.write_text("previous sources")
+        with self.assertRaises(Exception) as caught:
+            await self.run_example()
+        self.assertIn("web_search failed: errors or no results", "".join(traceback.format_exception(caught.exception)))
+        self.assertEqual(self.output.read_text(), "previous sources")
 
     async def test_deadline_cancels_request_and_preserves_file(self):
         self.mode = "wait"
