@@ -105,6 +105,9 @@ pplx-cli ask "quick question" --model gpt-5.5 --language zh-CN
 ```
 Single-turn AI answer with sources. Incognito ON, thread auto-deleted after.
 
+To gather search excerpts and page text into an inspectable file before asking,
+see the optional [Parallel source collection example](examples/README.md).
+
 ### Reason (interactive)
 
 ```bash
